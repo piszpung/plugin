@@ -4,12 +4,16 @@
 //
 // How it works (per channel):
 //   * the input is recorded continuously into a long ring buffer,
-//   * every hop (N/2 output samples) a window of N input samples is taken at a read
+//   * every hop (half a window of output samples) a window of input samples is taken at a read
 //     position that advances only (N/2)/stretch samples per hop,
 //   * the window is FFT'd, only the magnitudes are kept, phases are randomised,
 //     (optionally: low-pass and key/scale mask are applied to the magnitudes),
 //   * IFFT, sine synthesis window, overlap-add.
 // Random phases are independent per channel, which gives a wide stereo pad.
+//
+// Fast start: the very first grains use short windows (~21 ms) that double in length
+// as more input becomes available, until the full ~0.7 s window is reached. So the
+// output starts ~21 ms after the input starts instead of ~0.7 s.
 #pragma once
 
 #include <algorithm>
@@ -86,7 +90,6 @@ private:
     std::vector<int> rev;
 };
 
-
 // Transparent below `knee`, smoothly saturates towards +-1.0 above it (derivative continuous at the knee).
 inline float softClip (float x, float knee = 0.7f)
 {
@@ -128,18 +131,29 @@ public:
     void prepare (double sampleRate)
     {
         sr = sampleRate;
-        // window of ~0.7 s (32768 @ 44.1/48k, 65536 @ 96k)
+        // full window of ~0.7 s (32768 @ 44.1/48k, 65536 @ 96k)
         N = 1;
         while (N < (int) (sampleRate * 0.5)) N <<= 1;
-        H = N / 2;
-        fft.init (N);
+        minSize = std::max (256, N >> 5);                  // ~21 ms
+        numLevels = 0;
+        for (int s = minSize; s <= N; s <<= 1) ++numLevels;
 
-        hann.resize ((size_t) N);
-        sine.resize ((size_t) N);
-        for (int i = 0; i < N; ++i)
+        ffts.assign ((size_t) numLevels, FFT());
+        hannL.assign ((size_t) numLevels, std::vector<float>());
+        sineL.assign ((size_t) numLevels, std::vector<float>());
+        for (int l = 0; l < numLevels; ++l)
         {
-            hann[(size_t) i] = 0.5f - 0.5f * (float) std::cos (2.0 * kPi * i / N);
-            sine[(size_t) i] = (float) std::sin (kPi * (i + 0.5) / N);
+            const int n = minSize << l;
+            ffts[(size_t) l].init (n);
+            auto& h = hannL[(size_t) l];
+            auto& s = sineL[(size_t) l];
+            h.resize ((size_t) n);
+            s.resize ((size_t) n);
+            for (int i = 0; i < n; ++i)
+            {
+                h[(size_t) i] = 0.5f - 0.5f * (float) std::cos (2.0 * kPi * i / n);
+                s[(size_t) i] = (float) std::sin (kPi * (i + 0.5) / n);
+            }
         }
         // Hann has mean power 3/8; compensate so that output level ~ input level
         outGain = (float) std::sqrt (8.0 / 3.0);
@@ -149,11 +163,13 @@ public:
         ringMask = ringSize - 1;
         for (auto& r : ring) r.assign ((size_t) ringSize, 0.0f);
 
+        accSize = 2 * (int64_t) N;
+        accMask = accSize - 1;
+        for (auto& a : acc) a.assign ((size_t) accSize, 0.0f);
+
         re.resize ((size_t) N);
         im.resize ((size_t) N);
-        for (auto& a : acc) a.assign ((size_t) N, 0.0f);
-        for (auto& o : outBuf) o.assign ((size_t) H, 0.0f);
-        magMask.assign ((size_t) H + 1, 1.0f);
+        magMask.assign ((size_t) N / 2 + 1, 1.0f);
         maskDirty = true;
         reset();
     }
@@ -163,9 +179,9 @@ public:
         writePos = 0;
         readPos = 0.0;
         started = false;
-        outPos = H;
+        outPos = 0;
+        nextGrainStart = 0;
         for (auto& a : acc) std::fill (a.begin(), a.end(), 0.0f);
-        for (auto& o : outBuf) std::fill (o.begin(), o.end(), 0.0f);
         rng[0] = 0x9E3779B97F4A7C15ull;
         rng[1] = 0xD1B54A32D192ED03ull;
     }
@@ -187,9 +203,10 @@ public:
     }
 
     int windowSize() const { return N; }
+    int shortestWindow() const { return minSize; }
     bool isStarted() const { return started; }
 
-    // Process n samples. in/out may be the same buffers only if you do not need the input later.
+    // Process n samples.
     void process (const float* inL, const float* inR, float* outL, float* outR, int n)
     {
         if (maskDirty) rebuildMask();
@@ -201,17 +218,24 @@ public:
             ring[1][w] = inR[i];
             ++writePos;
 
-            if (! started && writePos >= N)
+            if (! started && writePos >= minSize)
             {
                 started = true;
+                outPos = 0;
+                nextGrainStart = 0;
                 readPos = 0.0;
             }
 
             if (started)
             {
-                if (outPos >= H) computeGrain();
-                outL[i] = outBuf[0][(size_t) outPos];
-                outR[i] = outBuf[1][(size_t) outPos];
+                // every grain that overlaps this output sample must already be added
+                while (nextGrainStart <= outPos) addGrain();
+
+                const size_t idx = (size_t) (outPos & accMask);
+                outL[i] = acc[0][idx];
+                outR[i] = acc[1][idx];
+                acc[0][idx] = 0.0f;
+                acc[1][idx] = 0.0f;
                 ++outPos;
             }
             else
@@ -233,30 +257,47 @@ private:
         return (float) ((r >> 40) * (1.0 / 16777216.0));   // [0,1)
     }
 
-    void computeGrain()
+    void addGrain()
     {
         // keep the read position inside the data that is still in the ring buffer
-        const double maxStart = (double) (writePos - N);
         const double minStart = std::max (0.0, (double) (writePos - ringSize + 2 * (int64_t) N));
-        readPos = std::min (std::max (readPos, minStart), maxStart);
-        const int64_t start = (int64_t) readPos;
+        if (readPos < minStart) readPos = minStart;
+
+        // largest window (minSize .. N) for which input data is already available
+        int64_t rpi = (int64_t) readPos;
+        const int64_t avail = writePos - rpi;
+        int lvl = numLevels - 1;
+        while (lvl > 0 && ((int64_t) minSize << lvl) > avail) --lvl;
+        const int Ns = minSize << lvl;
+        const bool full = (lvl == numLevels - 1);
+        if (full)
+        {
+            readPos = std::min (readPos, (double) (writePos - N));
+            rpi = (int64_t) readPos;
+        }
+
+        const int stride = N / Ns;               // bin k of this FFT == bin k*stride of the full grid
+        const int halfBins = Ns / 2;
+        const FFT& f = ffts[(size_t) lvl];
+        const float* hw = hannL[(size_t) lvl].data();
+        const float* sw = sineL[(size_t) lvl].data();
 
         for (int c = 0; c < kChannels; ++c)
         {
             float* r = re.data();
             float* m = im.data();
-            for (int k = 0; k < N; ++k)
+            for (int k = 0; k < Ns; ++k)
             {
-                r[k] = ring[c][(size_t) ((start + k) & ringMask)] * hann[(size_t) k];
+                r[k] = ring[c][(size_t) ((rpi + k) & ringMask)] * hw[k];
                 m[k] = 0.0f;
             }
-            fft.forward (r, m);
+            f.forward (r, m);
 
             // keep magnitudes (times mask), randomise phases, build conjugate-symmetric spectrum
-            for (int k = 0; k <= H; ++k)
+            for (int k = 0; k <= halfBins; ++k)
             {
-                const float mag = std::sqrt (r[k] * r[k] + m[k] * m[k]) * magMask[(size_t) k];
-                if (k == 0 || k == H)
+                const float mag = std::sqrt (r[k] * r[k] + m[k] * m[k]) * magMask[(size_t) (k * stride)];
+                if (k == 0 || k == halfBins)
                 {
                     r[k] = mag * ((nextRand (c) < 0.5f) ? 1.0f : -1.0f);   // real-valued bins
                     m[k] = 0.0f;
@@ -266,29 +307,25 @@ private:
                     const float ph = 6.28318530718f * nextRand (c);
                     const float cr = mag * std::cos (ph), ci = mag * std::sin (ph);
                     r[k] = cr;           m[k] = ci;
-                    r[N - k] = cr;       m[N - k] = -ci;
+                    r[Ns - k] = cr;      m[Ns - k] = -ci;
                 }
             }
-            fft.inverse (r, m);
+            f.inverse (r, m);
 
             float* a = acc[c].data();
-            for (int k = 0; k < N; ++k)
-                a[k] += r[k] * sine[(size_t) k] * outGain;
-
-            for (int k = 0; k < H; ++k) outBuf[c][(size_t) k] = a[k];
-            // shift accumulator by one hop
-            std::copy (a + H, a + N, a);
-            std::fill (a + H, a + N, 0.0f);
+            for (int k = 0; k < Ns; ++k)
+                a[(size_t) ((nextGrainStart + k) & accMask)] += r[k] * sw[k] * outGain;
         }
 
-        outPos = 0;
-        readPos += (double) H / (double) stretch;
+        nextGrainStart += Ns / 2;
+        // the read position only moves once the full window is in use
+        if (full) readPos += (double) (Ns / 2) / (double) stretch;
     }
 
     void rebuildMask()
     {
         maskDirty = false;
-        const int halfBins = H;
+        const int halfBins = N / 2;
         const float binHz = (float) (sr / N);
 
         // key / scale mask
@@ -338,9 +375,10 @@ private:
     }
 
     double sr = 48000.0;
-    int N = 32768, H = 16384;
-    FFT fft;
-    std::vector<float> hann, sine, re, im, magMask;
+    int N = 32768, minSize = 1024, numLevels = 6;
+    std::vector<FFT> ffts;
+    std::vector<std::vector<float>> hannL, sineL;
+    std::vector<float> re, im, magMask;
     float outGain = 1.0f;
 
     std::vector<float> ring[kChannels];
@@ -348,8 +386,9 @@ private:
     double readPos = 0.0;
     bool started = false;
 
-    std::vector<float> acc[kChannels], outBuf[kChannels];
-    int outPos = 0;
+    std::vector<float> acc[kChannels];
+    int64_t accSize = 0, accMask = 0;
+    int64_t outPos = 0, nextGrainStart = 0;
 
     float stretch = 5.0f;
     float lpfHz = 20000.0f;

@@ -114,6 +114,21 @@ a = run(noise[:SR * 8], stretch=6.0, lpf=3000.0, key=2, scale=1, block=64)
 b = run(noise[:SR * 8], stretch=6.0, lpf=3000.0, key=2, scale=1, block=1000)
 check("same output for block 64 and 1000", np.array_equal(a, b))
 
+# ---- 5b. fast start: output begins ~20 ms after the input does and is smooth while the window grows ----
+n = SR * 8
+steady_in = (rng.standard_normal((n, 2)) * 0.1).astype(np.float32)
+y = run(steady_in, stretch=5.0)
+def win_rms(sig, a, b): return rms(sig[int(a * SR):int(b * SR)])
+first_nz = int(np.argmax(np.abs(y[:, 0]) > 1e-3))
+check("fast start: first audible output within 40 ms", first_nz < 0.040 * SR, f"first sample > -60 dBFS at {first_nz / SR * 1000:.1f} ms")
+check("fast start: 50-150 ms already carries the pad (> -30 dBFS)", db(win_rms(y, 0.05, 0.15)) > -30,
+      f"{db(win_rms(y, 0.05, 0.15)):.1f} dBFS (input -20)")
+steady = db(win_rms(y, 3.0, 6.0))
+worst = 0.0
+for a in np.arange(0.1, 1.6, 0.05):
+    worst = max(worst, abs(db(win_rms(y, a, a + 0.05)) - steady))
+check("fast start: level stays within 6 dB of steady state from 100 ms on", worst < 6.0, f"worst deviation {worst:.1f} dB")
+
 # ---- 6. hot input: finite, bounded crest factor (random phases -> noise-like peaks) ----
 hot = np.clip(rng.standard_normal((SR * 10, 2)) * 1.5, -1, 1).astype(np.float32)
 y = run(hot, stretch=8.0)

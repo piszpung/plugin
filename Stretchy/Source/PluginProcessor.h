@@ -1,13 +1,14 @@
 #pragma once
 
+#include <atomic>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "StretchEngine.h"
 
-class StretchyAudioProcessor : public juce::AudioProcessor
+class ChronosphereAudioProcessor : public juce::AudioProcessor
 {
 public:
-    StretchyAudioProcessor();
-    ~StretchyAudioProcessor() override = default;
+    ChronosphereAudioProcessor();
+    ~ChronosphereAudioProcessor() override = default;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -17,11 +18,11 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "Stretchy"; }
+    const juce::String getName() const override { return "Chronosphere"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 5.0; }
+    double getTailLengthSeconds() const override { return 0.0; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -53,8 +54,10 @@ private:
     std::atomic<float>* pSafe = nullptr;
 
     float lastMixGain = 1.0f, lastOutGain = 1.0f;
-    bool wasPlaying = false;
+    float lastGate = 1.0f;               // 1 while the host transport plays, fades to 0 when it stops
+    bool wasPlaying = true;
+    bool resetWhenSilent = false;        // engine is reset once the fade-out after a stop has finished
     juce::int64 lastTimeInSamples = -1;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StretchyAudioProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChronosphereAudioProcessor)
 };

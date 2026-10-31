@@ -1,14 +1,15 @@
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
 
 //==============================================================================
-juce::AudioProcessorValueTreeState::ParameterLayout StretchyAudioProcessor::createLayout()
+juce::AudioProcessorValueTreeState::ParameterLayout ChronosphereAudioProcessor::createLayout()
 {
     using namespace juce;
     std::vector<std::unique_ptr<RangedAudioParameter>> p;
 
-    // Stretch: 100 % ... 20000 %, logarithmic-ish (centre of the knob = ~1414 %)
-    NormalisableRange<float> stretchRange (100.0f, 20000.0f, 1.0f);
-    stretchRange.setSkewForCentre (1414.0f);
+    // Stretch: 100 % ... 3000 %, logarithmic-ish (centre of the knob = ~548 %)
+    NormalisableRange<float> stretchRange (100.0f, 3000.0f, 1.0f);
+    stretchRange.setSkewForCentre (548.0f);
     p.push_back (std::make_unique<AudioParameterFloat> (
         ParameterID { "stretch", 1 }, "Stretch", stretchRange, 500.0f,
         AudioParameterFloatAttributes().withLabel ("%")));
@@ -47,7 +48,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout StretchyAudioProcessor::crea
 }
 
 //==============================================================================
-StretchyAudioProcessor::StretchyAudioProcessor()
+ChronosphereAudioProcessor::ChronosphereAudioProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true))
@@ -62,13 +63,13 @@ StretchyAudioProcessor::StretchyAudioProcessor()
     pSafe      = apvts.getRawParameterValue ("safe");
 }
 
-bool StretchyAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+bool ChronosphereAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     return layouts.getMainInputChannelSet()  == juce::AudioChannelSet::stereo()
         && layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
 }
 
-void StretchyAudioProcessor::prepareToPlay (double sampleRate, int /*samplesPerBlock*/)
+void ChronosphereAudioProcessor::prepareToPlay (double sampleRate, int /*samplesPerBlock*/)
 {
     if (sampleRate != currentSampleRate)
     {
@@ -87,39 +88,51 @@ void StretchyAudioProcessor::prepareToPlay (double sampleRate, int /*samplesPerB
 
     lastMixGain = pMix->load() * 0.01f;
     lastOutGain = juce::Decibels::decibelsToGain (pOutput->load());
-    wasPlaying = false;
+    lastGate = 1.0f;
+    wasPlaying = true;
+    resetWhenSilent = false;
     lastTimeInSamples = -1;
 }
 
 //==============================================================================
-void StretchyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void ChronosphereAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
 
     const int numSamples = buffer.getNumSamples();
-    if (buffer.getNumChannels() < 2 || currentSampleRate <= 0.0)
+    if (buffer.getNumChannels() < 2 || currentSampleRate <= 0.0 || numSamples <= 0)
         return;
 
-    // --- restart the stretch when playback starts / jumps back (loop, seek) -----------------
-    if (pAutoReset->load() > 0.5f)
+    const bool autoReset = pAutoReset->load() > 0.5f;
+
+    // --- transport: the pad only sounds while the host plays --------------------------------
+    // (hosts that give no position information are treated as "playing")
+    bool playing = true;
+    juce::int64 t = -1;
+    if (auto* ph = getPlayHead())
+        if (auto pos = ph->getPosition())
+        {
+            playing = pos->getIsPlaying();
+            if (auto ts = pos->getTimeInSamples()) t = *ts;
+        }
+
+    if (playing)
     {
-        bool playing = wasPlaying;
-        juce::int64 t = -1;
-        if (auto* ph = getPlayHead())
-            if (auto pos = ph->getPosition())
-            {
-                playing = pos->getIsPlaying();
-                if (auto ts = pos->getTimeInSamples()) t = *ts;
-            }
-
-        const bool started = playing && ! wasPlaying;
-        const bool jumpedBack = playing && t >= 0 && lastTimeInSamples >= 0 && t < lastTimeInSamples;
-        if (started || jumpedBack)
+        const bool started = ! wasPlaying;
+        const bool jumpedBack = t >= 0 && lastTimeInSamples >= 0 && t < lastTimeInSamples;
+        if (autoReset && (started || jumpedBack))
             engine.reset();
-
-        wasPlaying = playing;
-        lastTimeInSamples = (t >= 0) ? t + numSamples : -1;
+        resetWhenSilent = false;
     }
+    else if (wasPlaying)
+    {
+        resetWhenSilent = autoReset;     // restart the pad on the next play
+    }
+    wasPlaying = playing;
+    lastTimeInSamples = (t >= 0 && playing) ? t + numSamples : -1;
+
+    const float gate = playing ? 1.0f : 0.0f;
+    const bool runEngine = playing || lastGate > 0.0f;
 
     // --- parameters ---------------------------------------------------------------------------
     engine.setStretch (pStretch->load() * 0.01f);
@@ -140,17 +153,26 @@ void StretchyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         std::copy (L + offset, L + offset + n, dryL.begin());
         std::copy (R + offset, R + offset + n, dryR.begin());
 
-        engine.process (dryL.data(), dryR.data(), wetL.data(), wetR.data(), n);
+        if (runEngine)
+        {
+            engine.process (dryL.data(), dryR.data(), wetL.data(), wetR.data(), n);
+        }
+        else
+        {
+            std::fill (wetL.begin(), wetL.begin() + n, 0.0f);
+            std::fill (wetR.begin(), wetR.begin() + n, 0.0f);
+        }
 
-        // linear ramps for mix / output gain across the whole host block (no zipper noise)
+        // linear ramps for mix / output gain / transport gate across the whole host block (no zipper noise)
         for (int i = 0; i < n; ++i)
         {
             const float a = (float) (offset + i + 1) / (float) numSamples;
             const float mg = lastMixGain + (mixGain - lastMixGain) * a;
             const float og = lastOutGain + (outGain - lastOutGain) * a;
+            const float gg = lastGate + (gate - lastGate) * a;
 
-            float l = (dryL[(size_t) i] * (1.0f - mg) + wetL[(size_t) i] * mg) * og;
-            float r = (dryR[(size_t) i] * (1.0f - mg) + wetR[(size_t) i] * mg) * og;
+            float l = (dryL[(size_t) i] * (1.0f - mg) + wetL[(size_t) i] * mg * gg) * og;
+            float r = (dryR[(size_t) i] * (1.0f - mg) + wetR[(size_t) i] * mg * gg) * og;
             if (safe) { l = slowmo::softClip (l); r = slowmo::softClip (r); }
             L[offset + i] = l;
             R[offset + i] = r;
@@ -159,21 +181,28 @@ void StretchyAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 
     lastMixGain = mixGain;
     lastOutGain = outGain;
+    lastGate = gate;
+
+    if (! playing && resetWhenSilent)    // fade-out finished: forget the old material
+    {
+        engine.reset();
+        resetWhenSilent = false;
+    }
 }
 
 //==============================================================================
-juce::AudioProcessorEditor* StretchyAudioProcessor::createEditor()
+juce::AudioProcessorEditor* ChronosphereAudioProcessor::createEditor()
 {
-    return new juce::GenericAudioProcessorEditor (*this);
+    return new ChronosphereEditor (*this);
 }
 
-void StretchyAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+void ChronosphereAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     if (auto xml = apvts.copyState().createXml())
         copyXmlToBinary (*xml, destData);
 }
 
-void StretchyAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
+void ChronosphereAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (apvts.state.getType()))
@@ -183,5 +212,5 @@ void StretchyAudioProcessor::setStateInformation (const void* data, int sizeInBy
 //==============================================================================
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
-    return new StretchyAudioProcessor();
+    return new ChronosphereAudioProcessor();
 }
