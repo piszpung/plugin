@@ -22,5 +22,5 @@ jobs:
       - name: Upload plugin
         uses: actions/upload-artifact@v4
         with:
-          name: Stretchy-VST3-Windows
-          path: build/Stretchy_artefacts/Release/VST3/Stretchy.vst3
+          name: Chronosphere-VST3-Windows
+          path: build/Chronosphere_artefacts/Release/VST3/Chronosphere.vst3
