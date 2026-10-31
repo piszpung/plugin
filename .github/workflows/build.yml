@@ -1,0 +1,26 @@
+name: Build Stretchy VST3 (Windows)
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch JUCE 8.0.12
+        run: git clone --depth 1 --branch 8.0.12 https://github.com/juce-framework/JUCE.git Stretchy/JUCE
+
+      - name: Configure
+        run: cmake -S Stretchy -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stretchy-VST3-Windows
+          path: build/Stretchy_artefacts/Release/VST3/Stretchy.vst3
