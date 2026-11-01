@@ -118,6 +118,19 @@ int main (int argc, char** argv)
         ch->setValueNotifyingHost (ch->convertTo0to1 (40.0f));
     }
 
+    // export (drag out as .wav)
+    {
+        const auto orbs = proc.getOrbs();
+        const auto f0 = proc.exportSound (0, "my sample");
+        const auto f1 = proc.exportSound (orbs.empty() ? 0 : orbs[0].id, "my sample");
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatReader> r0 (f0.existsAsFile() ? wav.createReaderFor (f0.createInputStream().release(), true) : nullptr);
+        std::unique_ptr<juce::AudioFormatReader> r1 (f1.existsAsFile() ? wav.createReaderFor (f1.createInputStream().release(), true) : nullptr);
+        check ("export original as wav", r0 != nullptr && r0->numChannels == 2 && r0->bitsPerSample == 24 && r0->lengthInSamples > 1000, f0.getFileName().toStdString());
+        check ("export variation as wav (other file)", r1 != nullptr && r1->lengthInSamples > 100 && f1 != f0, f1.getFileName().toStdString());
+        check ("export unknown id fails cleanly", ! proc.exportSound (99999, "x").existsAsFile());
+    }
+
     // cloud limit
     for (int i = 0; i < 12; ++i) { proc.selectOrb (0, false, false); proc.transmute(); proc.waitUntilIdle (20000); }
     check ("cloud never exceeds the limit", (int) proc.getOrbs().size() <= PolymerAudioProcessor::kMaxOrbs, std::to_string (proc.getOrbs().size()));

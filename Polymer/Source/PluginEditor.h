@@ -9,7 +9,7 @@
 namespace polyui
 {
 
-constexpr float kW = 1024.0f, kH = 572.0f;        // design canvas (everything is laid out in these units)
+constexpr float kW = 560.0f, kH = 668.0f;        // design canvas (everything is laid out in these units)
 
 //==============================================================================
 class LookAndFeel : public juce::LookAndFeel_V4
@@ -51,6 +51,8 @@ public:
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseMove (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override { grabArmed = false; }
     void mouseExit (const juce::MouseEvent&) override { hoverId = -2; }
 
     void loadFile (const juce::File&);
@@ -64,7 +66,7 @@ private:
     {
         int id = 0, parent = 0, gen = 1;
         float hue = 0.6f, seconds = 1.0f;
-        float x = 512, y = 318, vx = 0, vy = 0;
+        float x = 288, y = 332, vx = 0, vy = 0;
         float born = 0.0f, pulse = 0.0f, alpha = 1.0f, phase = 0.0f;
         bool dying = false;
         float radius() const { return 10.0f - 1.2f * (float) std::min (gen - 1, 3); }
@@ -81,6 +83,8 @@ private:
     int  orbAt (juce::Point<float> p) const;
     bool onVial (juce::Point<float> p) const;
     bool onDropZone (juce::Point<float> p) const;
+    bool onGrab (juce::Point<float> p) const;
+    void drawGrab (juce::Graphics&);
     void burst (juce::Point<float> p, juce::Colour c, int n, float speed);
 
     void drawDropZone (juce::Graphics&);
@@ -108,12 +112,12 @@ private:
     float errorTimer = 0.0f, noteTimer = 0.0f;
     int lastVersion = -1, selectedId = 0, pending = 0, hoverId = -2;
     uint32_t lastTrigger = 0;
-    bool hasSource = false, dragHover = false, firstSync = true, hoverDrop = false;
+    bool hasSource = false, dragHover = false, firstSync = true, hoverDrop = false, hoverGrab = false, grabArmed = false;
     juce::String fileName;
 
     static constexpr int kBlobN = 72;
     float blobR[kBlobN] = {};
-    juce::Point<float> blobC { 512.0f, 205.0f };
+    juce::Point<float> blobC { 291.0f, 222.0f };
     bool blobInit = false;
     juce::Random rnd { 12345 };
     std::unique_ptr<juce::FileChooser> chooser;

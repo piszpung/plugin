@@ -23,6 +23,13 @@ void text (Graphics& g, const juce::String& t, float cx, float cy, float size, C
     g.drawText (t, Rectangle<float> (cx - 320.0f, cy - size, 640.0f, size * 2.0f), juce::Justification::centred, false);
 }
 
+void textL (Graphics& g, const juce::String& t, float x, float cy, float size, Colour c, float kerning = 0.0f, bool bold = false)
+{
+    g.setColour (c);
+    g.setFont (makeFont (size, bold, kerning));
+    g.drawText (t, Rectangle<float> (x, cy - size, 640.0f, size * 2.0f), juce::Justification::centredLeft, false);
+}
+
 float easeOutBack (float x)
 {
     x = std::clamp (x, 0.0f, 1.0f);
@@ -30,10 +37,19 @@ float easeOutBack (float x)
     return 1.0f + c3 * std::pow (x - 1.0f, 3.0f) + c1 * std::pow (x - 1.0f, 2.0f);
 }
 
-Colour orbColour (float hue, float alpha = 1.0f) { return Colour::fromHSV (hue, 0.80f, 1.0f, alpha); }
+// variations come in shades of red / bordeaux (the stored "hue" only picks the shade)
+Colour orbColour (float hue, float alpha = 1.0f)
+{
+    const Colour bordeaux (128, 8, 34), crimson (232, 22, 52), bright (255, 84, 92);
+    const float t = std::clamp (hue, 0.0f, 1.0f);
+    const Colour c = t < 0.5f ? bordeaux.interpolatedWith (crimson, t * 2.0f) : crimson.interpolatedWith (bright, (t - 0.5f) * 2.0f);
+    return c.withAlpha (alpha);
+}
 
-const Colour kCloud { 125, 175, 255 };
-const Colour kGreen { 74, 168, 98 };
+const Colour kCloud { 54, 255, 120 };      // neon green: cloud, potion, frame
+const Colour kGreen { 40, 235, 92 };
+const Colour kLime  { 206, 244, 40 };      // flask outline, Transmute
+const Colour kBlue  { 70, 110, 255 };      // grab box
 
 // soft glow = a few strokes of decreasing width / increasing opacity
 void glowStroke (Graphics& g, const Path& p, Colour c, float width, float alpha)
@@ -53,10 +69,12 @@ Point<float> bezier (Point<float> p0, Point<float> c1, Point<float> c2, Point<fl
     return p0 * (u * u * u) + c1 * (3.0f * u * u * t) + c2 * (3.0f * u * t * t) + p3 * (t * t * t);
 }
 
-const Point<float> kNeck { 512.0f, 318.0f };
-const Point<float> kCloudCentre { 512.0f, 205.0f };
-const Rectangle<float> kDropZone { 28.0f, 436.0f, 320.0f, 110.0f };
-const Rectangle<float> kFrame { 350.0f, 100.0f, 324.0f, 322.0f };
+const Point<float> kNeck { 288.0f, 332.0f };
+const Point<float> kCloudCentre { 291.0f, 222.0f };
+const Rectangle<float> kDropZone { 46.0f, 545.0f, 163.0f, 69.0f };
+const Rectangle<float> kGrab { 46.0f, 440.0f, 163.0f, 48.0f };
+const Rectangle<float> kFrame { 103.0f, 38.0f, 371.0f, 396.0f };
+const juce::AffineTransform kVialMove = juce::AffineTransform::translation (-224.0f, 14.0f);   // the vial is drawn in local coords (centre x 512)
 } // namespace
 
 //==============================================================================
@@ -131,29 +149,21 @@ void Backdrop::paint (Graphics& g)
 {
     const auto b = getLocalBounds().toFloat();
     const float K = b.getWidth() / kW;
-    g.fillAll (Colour (6, 8, 11));
-    juce::ColourGradient vg (Colour (27, 32, 40), b.getCentreX(), b.getHeight() * 0.50f, Colour (3, 4, 7), 0.0f, 0.0f, true);
-    g.setGradientFill (vg);
-    g.fillAll();
-    g.setOpacity (1.0f);
-    for (int y = 0; y < getHeight(); y += 128)
-        for (int x = 0; x < getWidth(); x += 128)
-            g.drawImageAt (grain, x, y);
-
+    g.fillAll (Colour (0, 0, 0));
     g.addTransform (juce::AffineTransform::scale (K));
 
-    // title with soft glow
-    const Colour glow (140, 190, 255);
-    for (float r : { 7.0f, 4.5f, 2.5f })
+    // neon title, top left
+    for (float r : { 5.0f, 3.2f, 1.8f })
         for (int i = 0; i < 8; ++i)
         {
             const float a = (float) i * juce::MathConstants<float>::pi * 0.25f;
-            text (g, "POLYMER", 512.0f + std::cos (a) * r, 50.0f + std::sin (a) * r, 43.0f, glow.withAlpha (0.045f), 0.22f);
+            textL (g, "Polymer", 22.0f + std::cos (a) * r, 18.0f + std::sin (a) * r, 21.0f, kGreen.withAlpha (0.05f), 0.08f);
         }
-    text (g, "POLYMER", 512.0f, 50.0f, 43.0f, Colour (228, 237, 250), 0.22f);
+    textL (g, "Polymer", 22.0f, 18.0f, 21.0f, Colour (150, 255, 180), 0.08f);
 
-    text (g, "TRANSMUTE", 512.0f, 540.0f, 12.5f, Colour::fromFloatRGBA (200/255.0f, 205/255.0f, 214/255.0f, 0.85f), 0.14f);
-    text (g, "CHAOS", 674.0f, 540.0f, 12.5f, Colour (200, 56, 68), 0.14f);
+    text (g, "drop sample", 127.5f, 530.0f, 13.0f, Colour (240, 244, 250), 0.06f);
+    text (g, "transmute", 279.0f, 634.0f, 13.0f, kLime, 0.06f);
+    text (g, "chaos", 397.0f, 634.0f, 13.0f, Colour (236, 54, 66), 0.06f);
 }
 
 //==============================================================================
@@ -168,28 +178,29 @@ void TransmuteButton::paintButton (Graphics& g, bool over, bool down)
 
     if (over || busy)
     {
-        juce::ColourGradient gl (kCloud.withAlpha (0.28f * a), c.x, c.y, kCloud.withAlpha (0.0f), c.x + 35.0f, c.y, true);
+        juce::ColourGradient gl (kLime.withAlpha (0.28f * a), c.x, c.y, kCloud.withAlpha (0.0f), c.x + 35.0f, c.y, true);
         g.setGradientFill (gl);
         g.fillEllipse (0.0f, 0.0f, 70.0f, 70.0f);
     }
-    juce::ColourGradient body (Colour (48, 52, 59).withAlpha (a), c.x, c.y - 14.0f, Colour (20, 22, 26).withAlpha (a), c.x, c.y + 32.0f, false);
+    juce::ColourGradient body (Colour (22, 26, 4).withAlpha (a), c.x, c.y - 14.0f, Colour (4, 6, 0).withAlpha (a), c.x, c.y + 32.0f, false);
     g.setGradientFill (body);
     g.fillEllipse (c.x - R, c.y - R, 2.0f * R, 2.0f * R);
-    g.setColour ((over || down ? Colour (205, 214, 228) : Colour (128, 134, 145)).withMultipliedAlpha (a));
+    g.setColour ((over || down ? kLime.brighter (0.4f) : kLime.darker (0.15f)).withMultipliedAlpha (a));
     g.drawEllipse (c.x - R, c.y - R, 2.0f * R, 2.0f * R, 1.7f);
 
     // icon: little triangle (vial) with a dot above it
     Path tri;
     tri.addTriangle (35.0f, 28.0f, 24.5f, 47.0f, 45.5f, 47.0f);
-    g.setColour (Colour (232, 236, 242).withMultipliedAlpha (a));
+    g.setColour (kLime.withMultipliedAlpha (a));
     g.strokePath (tri, juce::PathStrokeType (1.7f, juce::PathStrokeType::curved));
     g.fillEllipse (32.4f, 18.4f, 5.2f, 5.2f);
+    glowStroke (g, [&] { Path r; r.addEllipse (c.x - R, c.y - R, 2.0f * R, 2.0f * R); return r; }(), kLime, 1.2f, (over ? 0.9f : 0.55f) * a);
 
     if (busy)
     {
         Path arc;
         arc.addCentredArc (c.x, c.y, R + 3.0f, R + 3.0f, 0.0f, spin, spin + 1.9f, true);
-        glowStroke (g, arc, kCloud, 1.7f, 1.0f);
+        glowStroke (g, arc, kLime, 1.7f, 1.0f);
     }
 }
 
@@ -218,7 +229,8 @@ Path Scene::vialPath() const
     return p.createPathWithRoundedCorners (6.0f);
 }
 
-bool Scene::onVial (Point<float> p) const { return Rectangle<float> (448.0f, 308.0f, 128.0f, 106.0f).contains (p); }
+bool Scene::onVial (Point<float> p) const { return Rectangle<float> (224.0f, 322.0f, 128.0f, 106.0f).contains (p); }
+bool Scene::onGrab (Point<float> p) const { return kGrab.contains (p); }
 bool Scene::onDropZone (Point<float> p) const { return kDropZone.contains (p); }
 
 int Scene::orbAt (Point<float> p) const
@@ -268,9 +280,8 @@ void Scene::mouseDown (const juce::MouseEvent& e)
     const int id = orbAt (p);
     if (id > 0)
     {
-        proc.selectOrb (id, true, true);
+        proc.selectOrb (id, true, false);     // listen only; new variations come from Transmute
         for (auto& o : orbs) if (o.id == id) o.pulse = 1.0f;
-        kick();
     }
     else if (onVial (p))
     {
@@ -279,6 +290,17 @@ void Scene::mouseDown (const juce::MouseEvent& e)
     }
     else if (onDropZone (p))
         browse();
+    else if (onGrab (p) && hasSource)
+        grabArmed = true;
+}
+
+void Scene::mouseDrag (const juce::MouseEvent& e)
+{
+    if (! grabArmed || e.getDistanceFromDragStart() < 6) return;
+    grabArmed = false;
+    const auto file = proc.exportSound (selectedId, fileName);
+    if (file.existsAsFile())
+        juce::DragAndDropContainer::performExternalDragDropOfFiles (juce::StringArray (file.getFullPathName()), false, this);
 }
 
 void Scene::mouseMove (const juce::MouseEvent& e)
@@ -286,8 +308,9 @@ void Scene::mouseMove (const juce::MouseEvent& e)
     const Point<float> p = e.position / K();
     hoverId = orbAt (p);
     hoverDrop = onDropZone (p);
+    hoverGrab = hasSource && onGrab (p);
     const bool clickable = hoverId > 0 || onVial (p) || hoverDrop;
-    setMouseCursor (clickable ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
+    setMouseCursor (hoverGrab ? juce::MouseCursor::DraggingHandCursor : clickable ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
 }
 
 //------------------------------------------------------------------------------
@@ -301,10 +324,10 @@ void Scene::startDrop()
         f.t = 0.0f;
         f.dur = 0.8f + rnd.nextFloat() * 0.3f;
         f.size = 1.6f + rnd.nextFloat() * 1.8f;
-        f.p0 = { 50.0f + rnd.nextFloat() * 280.0f, 465.0f + rnd.nextFloat() * 60.0f };
-        f.c1 = { 410.0f + rnd.nextFloat() * 40.0f, 540.0f - rnd.nextFloat() * 30.0f };
-        f.c2 = { 505.0f + rnd.nextFloat() * 14.0f, 235.0f + rnd.nextFloat() * 40.0f };
-        f.p3 = { 509.0f + rnd.nextFloat() * 6.0f, 326.0f };
+        f.p0 = { 56.0f + rnd.nextFloat() * 145.0f, 560.0f + rnd.nextFloat() * 40.0f };
+        f.c1 = { 215.0f + rnd.nextFloat() * 30.0f, 600.0f - rnd.nextFloat() * 30.0f };
+        f.c2 = { 281.0f + rnd.nextFloat() * 14.0f, 270.0f + rnd.nextFloat() * 40.0f };
+        f.p3 = { 285.0f + rnd.nextFloat() * 6.0f, 344.0f };
         flyers.push_back (f);
     }
     liquid = 0.0f;
@@ -400,7 +423,7 @@ void Scene::step (float dt)
             f.landed = true;
             liquidTarget = std::min (0.62f, liquidTarget + 0.62f / 44.0f);
             sloshV += 14.0f * (rnd.nextFloat() - 0.4f);
-            burst ({ f.p3.x, 362.0f }, Colour (170, 230, 255), 2, 40.0f);
+            burst ({ f.p3.x, 376.0f }, Colour (150, 255, 180), 2, 40.0f);
         }
     }
     if (! flyers.empty() && std::all_of (flyers.begin(), flyers.end(), [] (const Fly& f) { return f.landed; }) && liquid > liquidTarget - 0.01f)
@@ -442,8 +465,8 @@ void Scene::step (float dt)
 
     // --- orb physics
     const Point<float> C = kCloudCentre;
-    const float rx = 128.0f, ry = 72.0f;
-    const Point<float> anchor0 { 512.0f, 236.0f };
+    const float rx = 122.0f, ry = 78.0f;
+    const Point<float> anchor0 { 290.0f, 262.0f };
     for (auto& o : orbs)
     {
         o.born = std::min(1.0f, o.born + dt * 1.8f);
@@ -553,26 +576,27 @@ void Scene::paint (Graphics& g)
 
     // chaos value under the label
     const float chaos = proc.apvts.getRawParameterValue ("chaos")->load();
-    text (g, juce::String (juce::roundToInt (chaos)) + "%", 674.0f, 558.0f, 11.0f, Colour (200, 56, 68).withAlpha (0.65f), 0.05f);
+    text (g, juce::String (juce::roundToInt (chaos)) + "%", 397.0f, 652.0f, 11.0f, Colour (236, 54, 66).withAlpha (0.7f), 0.05f);
+    drawGrab (g);
 }
 
 void Scene::drawStatus (Graphics& g)
 {
-    juce::String msg; Colour c = Colour::fromFloatRGBA (190/255.0f, 198/255.0f, 210/255.0f, 0.55f);
+    juce::String msg; Colour c = Colour (170, 255, 195).withAlpha (0.6f);
     if (errorTimer > 0.0f)         { msg = "Couldn't read that file"; c = Colour (235, 110, 110).withAlpha (0.85f); }
     else if (! hasSource)          msg = "Drop a sample to begin";
     else if (noteTimer > 0.0f)     msg = "Long sample - using the first 8 seconds";
     else if (pending > 0)          msg = "Transmuting...";
     else if (orbs.empty())         msg = "Press Transmute";
-    else                           msg = "Click a bubble to hear it and grow its variations";
-    text (g, msg, 512.0f, 90.0f, 13.0f, c, 0.06f);
+    else                           msg = "Click a bubble to hear it - Transmute grows it";
+    text (g, msg, 300.0f, 18.0f, 12.0f, c, 0.05f);
 }
 
 void Scene::drawDropZone (Graphics& g)
 {
     const auto r = kDropZone;
     const bool hot = dragHover || hoverDrop;
-    g.setColour (Colour (255, 255, 255).withAlpha (hot ? 0.065f : 0.032f));
+    g.setColour (Colour (255, 255, 255).withAlpha (hot ? 0.07f : 0.03f));
     g.fillRoundedRectangle (r, 6.0f);
     if (dragHover)
     {
@@ -581,16 +605,16 @@ void Scene::drawDropZone (Graphics& g)
     }
     else
     {
-        g.setColour (Colour (150, 160, 176).withAlpha (hot ? 0.5f : 0.22f));
-        g.drawRoundedRectangle (r, 6.0f, 1.2f);
+        Path pr; pr.addRoundedRectangle (r, 6.0f);
+        glowStroke (g, pr, Colour (245, 248, 252), 1.3f, hot ? 1.0f : 0.8f);
         if (dropGlow > 0.0f)
         {
             Path pr; pr.addRoundedRectangle (r, 6.0f);
-            glowStroke (g, pr, Colour (150, 215, 255), 1.4f, dropGlow);
+            glowStroke (g, pr, kLime, 1.4f, dropGlow);
         }
     }
 
-    const auto inner = r.reduced (9.0f, 14.0f);
+    const auto inner = r.reduced (8.0f, 12.0f);
     const float cy = inner.getCentreY();
     auto bars = [&] (const std::vector<float>& pk, Colour col, float scaleTo)
     {
@@ -613,9 +637,9 @@ void Scene::drawDropZone (Graphics& g)
             const float t = (float) i / (float) ph.size();
             ph[i] = std::exp (-t * 3.0f) * (0.3f + 0.7f * std::fabs (std::sin ((float) i * 1.7f) * std::sin ((float) i * 0.37f)));
         }
-        bars (ph, Colour (110, 135, 165).withAlpha (hot ? 0.55f : 0.4f), 1.0f);
-        text (g, dragHover ? "DROP TO LOAD" : "DRAG & DROP SAMPLE", r.getCentreX(), cy - 2.0f, 12.0f, Colour (206, 211, 222).withAlpha (0.82f), 0.12f);
-        text (g, "or click to browse", r.getCentreX(), cy + 15.0f, 10.5f, Colour (190, 196, 208).withAlpha (0.4f), 0.04f);
+        bars (ph, Colour (120, 140, 150).withAlpha (hot ? 0.5f : 0.35f), 1.0f);
+        text (g, dragHover ? "DROP TO LOAD" : "DRAG & DROP", r.getCentreX(), cy - 2.0f, 11.0f, Colour (235, 240, 246).withAlpha (0.85f), 0.1f);
+        text (g, "or click to browse", r.getCentreX(), cy + 13.0f, 9.5f, Colour (200, 206, 216).withAlpha (0.45f), 0.03f);
     }
     else
     {
@@ -624,7 +648,7 @@ void Scene::drawDropZone (Graphics& g)
             if (it == peakCache.end()) it = peakCache.emplace (id, proc.getPeaks (id)).first;
             return it->second;
         };
-        bars (peaksFor (0), Colour (140, 162, 192).withAlpha (selectedId == 0 ? 0.85f : 0.4f), 1.0f);
+        bars (peaksFor (0), Colour (205, 238, 215).withAlpha (selectedId == 0 ? 0.85f : 0.4f), 1.0f);
         if (selectedId != 0)
         {
             float hue = 0.6f;
@@ -632,20 +656,34 @@ void Scene::drawDropZone (Graphics& g)
             bars (peaksFor (selectedId), orbColour (hue, 0.85f), 0.9f);
         }
         const juce::String cap = (fileName.isNotEmpty() ? fileName + "  -  " : juce::String()) + juce::String (proc.getSourceSeconds(), 1) + " s"
-                                 + (hot ? "   (click or drop to replace)" : "");
+                                 + (hot ? "  (replace)" : "");
         g.setColour (Colour (200, 206, 216).withAlpha (0.55f));
-        g.setFont (makeFont (10.5f, false, 0.03f));
-        g.drawText (cap, Rectangle<float> (r.getX() + 10.0f, r.getBottom() - 17.0f, r.getWidth() - 20.0f, 14.0f), juce::Justification::centredLeft, true);
+        g.setFont (makeFont (9.5f, false, 0.02f));
+        g.drawText (cap, Rectangle<float> (r.getX() + 8.0f, r.getBottom() - 15.0f, r.getWidth() - 16.0f, 13.0f), juce::Justification::centredLeft, true);
     }
+}
+
+void Scene::drawGrab (Graphics& g)
+{
+    const auto r = kGrab;
+    const float a = hasSource ? 1.0f : 0.35f;
+    const bool hot = hoverGrab || grabArmed;
+    g.setColour (kBlue.withAlpha (hot ? 0.16f : 0.06f));
+    g.fillRoundedRectangle (r, 6.0f);
+    Path pr; pr.addRoundedRectangle (r, 6.0f);
+    glowStroke (g, pr, kBlue, 1.5f, (hot ? 1.0f : 0.8f) * a);
+    text (g, "grab sample", r.getCentreX(), r.getCentreY() - (hot ? 5.0f : 0.0f), 13.0f, Colour (120, 150, 255).withAlpha (a), 0.06f);
+    if (hot)
+        text (g, selectedId == 0 ? "drag the original out as .wav" : "drag this sound out as .wav", r.getCentreX(), r.getCentreY() + 10.0f, 9.5f, Colour (170, 190, 255).withAlpha (0.8f), 0.02f);
 }
 
 void Scene::drawFrame (Graphics& g)
 {
-    Path frame; frame.addRoundedRectangle (kFrame, 36.0f);
+    Path frame; frame.addRoundedRectangle (kFrame, 56.0f);
 
     g.saveState();
     g.reduceClipRegion (frame);
-    juce::ColourGradient ig (Colour (20, 31, 30).withAlpha (0.92f), 512.0f, 270.0f, Colour (7, 11, 12).withAlpha (0.95f), 350.0f, 100.0f, true);
+    juce::ColourGradient ig (Colour (4, 22, 11), 291.0f, 250.0f, Colour (0, 0, 0), 120.0f, 60.0f, true);
     g.setGradientFill (ig);
     g.fillPath (frame);
     drawCloud (g);
@@ -668,7 +706,7 @@ void Scene::drawCloud (Graphics& g)
     const float streamAmt = std::max (cloudAlpha, brew * 0.85f);
     if (streamAmt < 0.02f) return;
 
-    Point<float> bot (512.0f, 318.0f - 74.0f * brew);
+    Point<float> bot (kNeck.x, kNeck.y - 74.0f * brew);
     if (cloudAlpha > 0.02f) bot = { blobC.x, blobC.y + blobR[kBlobN / 4] };
 
     for (int k = 0; k < 2; ++k)
@@ -676,8 +714,8 @@ void Scene::drawCloud (Graphics& g)
         Path s;
         s.startNewSubPath (kNeck);
         const float fk = (float) k;
-        s.cubicTo ({ 512.0f + (14.0f + 4.0f * fk) * std::sin (time * 1.7f + fk * 2.1f), kNeck.y + (bot.y - kNeck.y) * 0.33f },
-                   { 512.0f - (16.0f + 3.0f * fk) * std::sin (time * 1.3f + 1.0f + fk), kNeck.y + (bot.y - kNeck.y) * 0.68f },
+        s.cubicTo ({ kNeck.x + (14.0f + 4.0f * fk) * std::sin (time * 1.7f + fk * 2.1f), kNeck.y + (bot.y - kNeck.y) * 0.33f },
+                   { kNeck.x - (16.0f + 3.0f * fk) * std::sin (time * 1.3f + 1.0f + fk), kNeck.y + (bot.y - kNeck.y) * 0.68f },
                    { bot.x + 6.0f * std::sin (time * 0.9f + fk), bot.y });
         glowStroke (g, s, kCloud, k == 0 ? 1.5f : 1.0f, streamAmt * (k == 0 ? 0.85f : 0.45f));
     }
@@ -701,7 +739,7 @@ void Scene::drawCloud (Graphics& g)
         p.closeSubPath();
         if (k == 0)
         {
-            g.setColour (kCloud.withAlpha (0.035f * cloudAlpha));
+            g.setColour (kCloud.withAlpha (0.05f * cloudAlpha));
             g.fillPath (p);
         }
         glowStroke (g, p, kCloud, k == 0 ? 1.5f : 1.0f, cloudAlpha * (k == 0 ? 0.9f : 0.45f));
@@ -753,13 +791,15 @@ void Scene::drawOrbs (Graphics& g)
 
 void Scene::drawVial (Graphics& g)
 {
+    g.saveState();
+    g.addTransform (kVialMove);
     const Path vp = vialPath();
     const float surfaceY = 404.0f - liquid * 66.0f;
 
     // halo when the original is the selected sound
     if (hasSource && selectedId == 0)
     {
-        juce::ColourGradient halo (Colour (120, 200, 255).withAlpha (0.10f + 0.16f * vialPulse), 512.0f, 372.0f, Colour (120, 200, 255).withAlpha (0.0f), 512.0f, 292.0f, true);
+        juce::ColourGradient halo (kLime.withAlpha (0.08f + 0.14f * vialPulse), 512.0f, 372.0f, kLime.withAlpha (0.0f), 512.0f, 292.0f, true);
         g.setGradientFill (halo);
         g.fillEllipse (402.0f, 292.0f, 220.0f, 160.0f);
     }
@@ -779,8 +819,8 @@ void Scene::drawVial (Graphics& g)
         wave.lineTo (572.0f, 420.0f);
         wave.closeSubPath();
         const float mixT = brew * (0.5f + 0.5f * std::sin (time * 5.0f));
-        const Colour top = Colour (84, 214, 255).interpolatedWith (Colour (214, 120, 255), mixT * 0.8f);
-        const Colour bot = Colour (22, 98, 208).interpolatedWith (Colour (110, 50, 200), mixT * 0.7f);
+        const Colour top = Colour (96, 255, 150).interpolatedWith (Colour (210, 255, 70), mixT * 0.8f);
+        const Colour bot = Colour (10, 128, 58).interpolatedWith (Colour (70, 150, 20), mixT * 0.7f);
         juce::ColourGradient lg (top.withAlpha (0.88f), 512.0f, surfaceY, bot.withAlpha (0.92f), 512.0f, 404.0f, false);
         g.setGradientFill (lg);
         g.fillPath (wave);
@@ -791,11 +831,11 @@ void Scene::drawVial (Graphics& g)
             const float y = surfaceY + 1.8f * std::sin (x * 0.09f + time * 2.2f) * (0.45f + brew) + slosh * (x - 512.0f) * 0.07f;
             if (x == 452.0f) line.startNewSubPath (x, y); else line.lineTo (x, y);
         }
-        g.setColour (Colour (230, 248, 255).withAlpha (0.7f));
+        g.setColour (Colour (200, 255, 220).withAlpha (0.8f));
         g.strokePath (line, juce::PathStrokeType (1.3f));
         for (const auto& b : bubbles)
         {
-            g.setColour (Colour (214, 244, 255).withAlpha (0.55f));
+            g.setColour (Colour (190, 255, 215).withAlpha (0.55f));
             g.drawEllipse (b.x - b.r, b.y - b.r, 2.0f * b.r, 2.0f * b.r, 1.0f);
         }
         g.restoreState();
@@ -804,9 +844,10 @@ void Scene::drawVial (Graphics& g)
     // outline
     const bool sel = hasSource && selectedId == 0;
     const float a = (hasSource ? 0.78f : 0.55f) + (sel ? 0.2f : 0.0f) + 0.2f * brew * std::sin (time * 7.0f) + 0.2f * vialPulse;
-    glowStroke (g, vp, Colour (232, 238, 246), 1.7f, std::clamp (a, 0.0f, 1.0f));
-    g.setColour (Colour (232, 238, 246).withAlpha (0.55f));
+    glowStroke (g, vp, kLime, 1.7f, std::clamp (a, 0.0f, 1.0f));
+    g.setColour (kLime.withAlpha (0.55f));
     g.drawLine (499.0f, 320.0f, 525.0f, 320.0f, 1.6f);
+    g.restoreState();
 }
 
 void Scene::drawFlyers (Graphics& g)
@@ -821,10 +862,10 @@ void Scene::drawFlyers (Graphics& g)
             const Point<float> p = bezier (f.p0, f.c1, f.c2, f.p3, e);
             const float al = (1.0f - (float) k / 6.0f) * 0.9f;
             const float sz = f.size * (1.0f - (float) k * 0.1f);
-            juce::ColourGradient gl (Colour (160, 225, 255).withAlpha (0.35f * al), p.x, p.y, Colour (160, 225, 255).withAlpha (0.0f), p.x + sz * 4.0f, p.y, true);
+            juce::ColourGradient gl (Colour (120, 255, 160).withAlpha (0.35f * al), p.x, p.y, Colour (120, 255, 160).withAlpha (0.0f), p.x + sz * 4.0f, p.y, true);
             g.setGradientFill (gl);
             g.fillEllipse (p.x - sz * 4.0f, p.y - sz * 4.0f, sz * 8.0f, sz * 8.0f);
-            g.setColour (Colour (232, 248, 255).withAlpha (al));
+            g.setColour (Colour (225, 255, 235).withAlpha (al));
             g.fillEllipse (p.x - sz * 0.5f, p.y - sz * 0.5f, sz, sz);
         }
     }
@@ -861,7 +902,7 @@ PolymerEditor::PolymerEditor (PolymerAudioProcessor& p) : juce::AudioProcessorEd
     gateToggle.setMouseCursor (juce::MouseCursor::PointingHandCursor);
     attGate = std::make_unique<ButtonAtt> (proc.apvts, "gate", gateToggle);
 
-    setSize (880, 492);
+    setSize (504, 601);
     setResizable (false, false);
     scene.advance (0.0f);
     startTimerHz (30);
@@ -880,9 +921,9 @@ void PolymerEditor::resized()
     auto R = [&] (float x, float y, float w, float h) { return juce::Rectangle<int> ((int) std::lround (x * K), (int) std::lround (y * K), (int) std::lround (w * K), (int) std::lround (h * K)); };
     backdrop.setBounds (getLocalBounds());
     scene.setBounds (getLocalBounds());
-    button.setBounds (R (477.0f, 452.0f, 70.0f, 70.0f));
-    chaosKnob.setBounds (R (634.0f, 447.0f, 80.0f, 80.0f));
-    gateToggle.setBounds (R (770.0f, 470.0f, 176.0f, 34.0f));
+    button.setBounds (R (230.0f, 524.0f, 98.0f, 98.0f));
+    chaosKnob.setBounds (R (341.0f, 517.0f, 112.0f, 112.0f));
+    gateToggle.setBounds (R (428.0f, 452.0f, 130.0f, 34.0f));
 }
 
 bool PolymerEditor::isInterestedInFileDrag (const juce::StringArray& files)

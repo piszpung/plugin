@@ -58,6 +58,8 @@ public:
     std::vector<OrbView> getOrbs() const;              // all bubbles (without the original)
     std::vector<float> getPeaks (int id) const;        // waveform thumbnail (id 0 = original)
     float getSourceSeconds() const;
+    // writes a sound (0 = original) as a 24-bit WAV into a temp folder, for dragging it out of the plug-in; invalid File on failure
+    juce::File exportSound (int id, const juce::String& baseName) const;
     int  getSampleVersion() const { return sampleVersion.load(); }
     bool sourceWasTrimmed() const { return trimmed.load(); }
     uint32_t getTriggerCount() const { return triggerCount.load(); }

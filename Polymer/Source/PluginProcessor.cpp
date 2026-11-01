@@ -284,6 +284,37 @@ float PolymerAudioProcessor::getSourceSeconds() const
     return sounds.empty() ? 0.0f : sounds[0]->seconds;
 }
 
+juce::File PolymerAudioProcessor::exportSound (int id, const juce::String& baseName) const
+{
+    std::shared_ptr<poly::Sound> s;
+    {
+        const juce::ScopedLock sl (lock);
+        s = findLocked (id);
+    }
+    if (s == nullptr || s->audio.size() < 2) return {};
+
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Polymer_export");
+    if (! dir.createDirectory().wasOk()) return {};
+    for (const auto& old : dir.findChildFiles (juce::File::findFiles, false, "*.wav"))      // tidy up exports older than 2 days
+        if (old.getLastModificationTime() < juce::Time::getCurrentTime() - juce::RelativeTime::days (2.0)) old.deleteFile();
+
+    juce::String name = juce::File::createLegalFileName (baseName.isNotEmpty() ? baseName : juce::String ("Polymer"));
+    name += id == 0 ? juce::String ("_original") : "_poly" + juce::String (id);
+    const auto file = dir.getChildFile (name + ".wav");
+    file.deleteFile();
+
+    std::unique_ptr<juce::OutputStream> out = std::make_unique<juce::FileOutputStream> (file);
+    if (! static_cast<juce::FileOutputStream*> (out.get())->openedOk()) return {};
+    juce::WavAudioFormat wav;
+    auto w = wav.createWriterFor (out, juce::AudioFormatWriterOptions().withSampleRate (s->audio.sr).withNumChannels (2).withBitsPerSample (24));
+    if (! w) return {};
+    juce::AudioBuffer<float> buf (2, s->audio.size());
+    for (int ch = 0; ch < 2; ++ch) std::copy (s->audio.ch[ch].begin(), s->audio.ch[ch].end(), buf.getWritePointer (ch));
+    const bool ok = w->writeFromAudioSampleBuffer (buf, 0, buf.getNumSamples());
+    w.reset();
+    return ok && file.existsAsFile() ? file : juce::File();
+}
+
 bool PolymerAudioProcessor::waitUntilIdle (int timeoutMs) const
 {
     const auto end = juce::Time::getMillisecondCounter() + (juce::uint32) timeoutMs;
