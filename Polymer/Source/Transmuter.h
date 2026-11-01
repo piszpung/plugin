@@ -660,16 +660,22 @@ inline float hueFromCentroid (float hz)
     return detail::lerp (hues[i], hues[i + 1], x - (float) i);
 }
 
-// Every variation gets its own colour (a pick from a fixed palette, derived from its seed, so it survives a project reload).
+// Colour "position" (0..1) of a variation. First-generation variations get any position (so the cloud is varied);
+// a variation of a variation stays close to its parent (+-0.08) so a family looks related. The editor turns the
+// position into a shade of red / bordeaux. Derived from the seed only, so it survives a project reload.
 inline float hueFromSeed (uint32_t seed)
 {
-    static const float pal[8] = { 0.78f, 0.14f, 0.99f, 0.06f, 0.52f, 0.36f, 0.90f, 0.61f };   // purple yellow red orange cyan green pink blue
     uint32_t x = seed * 2654435761u;
     x ^= x >> 15; x *= 2246822519u; x ^= x >> 13; x *= 3266489917u; x ^= x >> 16;
-    const float jitter = ((float) ((x >> 8) & 255u) / 255.0f - 0.5f) * 0.03f;
-    float h = pal[x % 8u] + jitter;
-    h -= std::floor (h);
-    return h;
+    return (float) (x >> 8) / 16777216.0f;
+}
+
+inline float childHue (float parentHue, uint32_t seed)
+{
+    float h = parentHue + (hueFromSeed (seed ^ 0x9e3779b9u) - 0.5f) * 0.16f;
+    if (h < 0.0f) h = -h;                       // reflect at the ends instead of wrapping around
+    if (h > 1.0f) h = 2.0f - h;
+    return std::clamp (h, 0.0f, 1.0f);
 }
 
 // ------------------------------------------------------------------------------------------

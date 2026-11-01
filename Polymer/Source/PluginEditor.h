@@ -20,14 +20,12 @@ public:
 };
 
 //==============================================================================
-// Static scene: dark vignette, grain, glowing title, captions. Buffered by JUCE, drawn once.
+// Static scene: black background, neon title, captions, divider lines. Buffered by JUCE, drawn once.
 class Backdrop : public juce::Component
 {
 public:
-    Backdrop();
+    Backdrop() { setInterceptsMouseClicks (false, false); setBufferedToImage (true); }
     void paint (juce::Graphics&) override;
-private:
-    juce::Image grain;
 };
 
 //==============================================================================
@@ -40,8 +38,17 @@ public:
     float spin = 0.0f;
 };
 
+// Small round button: drops all variations, keeps the sample.
+class ResetButton : public juce::Button
+{
+public:
+    ResetButton() : juce::Button ("Reset") { setMouseCursor (juce::MouseCursor::PointingHandCursor); }
+    void paintButton (juce::Graphics&, bool over, bool down) override;
+    bool active = false;
+};
+
 //==============================================================================
-// The animated middle: vial, liquid, cloud of bubbles, drop-zone waveform.
+// The animated middle: vial, liquid, cloud of bubbles, threads, drop zone, grab box.
 class Scene : public juce::Component
 {
 public:
@@ -59,6 +66,7 @@ public:
     void browse();
     void setDragHover (bool b) { dragHover = b; }
     void kick() { kickTimer = 1.0f; }      // Transmute pressed (visual feedback even before results arrive)
+    void dissolve();                       // Reset pressed: the cloud evaporates
     bool isBrewing() const { return pending > 0 || kickTimer > 0.0f; }
 
 private:
@@ -66,13 +74,13 @@ private:
     {
         int id = 0, parent = 0, gen = 1;
         float hue = 0.6f, seconds = 1.0f;
-        float x = 288, y = 347, vx = 0, vy = 0;
+        float x = 280, y = 328, vx = 0, vy = 0;
         float born = 0.0f, pulse = 0.0f, alpha = 1.0f, phase = 0.0f;
-        bool dying = false;
+        bool dying = false, evap = false;
         float radius() const { return 7.8f - 0.9f * (float) std::min (gen - 1, 3); }
     };
     struct Fly { float delay, t, dur, size; juce::Point<float> p0, c1, c2, p3; bool landed = false; };
-    struct Spark { juce::Point<float> p, v; float life, maxLife, size; juce::Colour c; };
+    struct Spark { juce::Point<float> p, v; float life, maxLife, size; juce::Colour c; bool smoke = false; };
     struct Bubble { float x, y, vy, r, wob; };
 
     void sync();
@@ -84,12 +92,14 @@ private:
     bool onVial (juce::Point<float> p) const;
     bool onDropZone (juce::Point<float> p) const;
     bool onGrab (juce::Point<float> p) const;
-    void drawGrab (juce::Graphics&);
     void burst (juce::Point<float> p, juce::Colour c, int n, float speed);
+    void showExportMenu();
 
     void drawDropZone (juce::Graphics&);
+    void drawGrab (juce::Graphics&);
     void drawFrame (juce::Graphics&);
     void drawCloud (juce::Graphics&);
+    void drawThreads (juce::Graphics&);
     void drawOrbs (juce::Graphics&);
     void drawVial (juce::Graphics&);
     void drawFlyers (juce::Graphics&);
@@ -107,7 +117,7 @@ private:
     std::map<int, std::vector<float>> peakCache;
 
     float time = 0.0f, revealTimer = 0.0f, kickTimer = 0.0f;
-    float liquid = 0.0f, liquidTarget = 0.0f, slosh = 0.0f, sloshV = 0.0f;
+    float liquid = 0.0f, liquidTarget = 0.0f, slosh = 0.0f, sloshV = 0.0f, potionRed = 0.0f;
     float brew = 0.0f, cloudAlpha = 0.0f, vialPulse = 0.0f, dropGlow = 0.0f;
     float errorTimer = 0.0f, noteTimer = 0.0f;
     int lastVersion = -1, selectedId = 0, pending = 0, hoverId = -2;
@@ -117,7 +127,7 @@ private:
 
     static constexpr int kBlobN = 72;
     float blobR[kBlobN] = {};
-    juce::Point<float> blobC { 291.0f, 222.0f };
+    juce::Point<float> blobC { 280.0f, 190.0f };
     bool blobInit = false;
     juce::Random rnd { 12345 };
     std::unique_ptr<juce::FileChooser> chooser;
@@ -144,6 +154,7 @@ public:
 
     void advanceAnimation (float seconds);       // used by the screenshot test
     polyui::Scene& getScene() { return scene; }
+    void pressReset();                            // same as clicking the reset button
 
 private:
     void timerCallback() override;
@@ -153,6 +164,7 @@ private:
     polyui::Backdrop backdrop;
     polyui::Scene scene;
     polyui::TransmuteButton button;
+    polyui::ResetButton resetButton;
     juce::Slider chaosKnob;
     juce::ToggleButton gateToggle { "NOTE-OFF CUT" };
 

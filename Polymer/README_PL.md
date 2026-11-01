@@ -16,3 +16,12 @@ Chmura ma limit 36 bąbli, najstarsze „liście" rozpuszczają się same. Proje
 
 ## Budowanie
 Folder `Polymer` + plik `.github/workflows/build.yml` w repozytorium, zakładka Actions, pobierz artefakt `Polymer-VST3-Windows`.
+
+## Zmiany (wersja 4)
+- Nowy wygląd wg konceptu: czarne tło, neonowa zieleń (chmura, mikstura, ramka), wariacje w odcieniach czerwieni/bordo.
+- **Reset** (mały przycisk na prawo od „chaos”): usuwa wszystkie wariacje, sampel zostaje; chmura „ulatnia się”, mikstura wraca do zieleni.
+- Mikstura jest zielona, po „Transmute” robi się czerwona. Animacja wlewania sampla jest oszczędniejsza.
+- Wariacje wariacji wyrastają z bąbelka-rodzica (nie z fiolki). Ich kolor jest bliski kolorowi rodzica (±0.08 w skali kolorów), a pierwsze pokolenie jest bardziej zróżnicowane.
+- **Folder eksportu**: „grab sample” zapisuje .wav do wybranego folderu. Prawy klik na „grab sample” → „Choose export folder…” (np. folder projektu FL Studio). Folder jest zapamiętany w projekcie i jako domyślny dla nowych. Domyślnie: Dokumenty/Polymer exports.
+  Uwaga: standard VST3 nie udostępnia wtyczce ścieżki projektu hosta, więc nie da się tego zrobić automatycznie – trzeba wskazać folder raz na projekt.
+- Uwaga: kolory wariacji liczą się inaczej niż wcześniej, więc w starych projektach bąbelki mogą mieć inne kolory (dźwięk ten sam).

@@ -55,5 +55,10 @@ int main (int argc, char** argv)
     proc.waitUntilIdle (20000);
     run (ed, proc, 4.0f);
     shot (ed, dir.getChildFile ("6_bloom.png"));
+    ed.pressReset();
+    run (ed, proc, 0.8f);
+    shot (ed, dir.getChildFile ("7_dissolving.png"));
+    run (ed, proc, 3.0f);
+    shot (ed, dir.getChildFile ("8_after_reset.png"));
     return 0;
 }

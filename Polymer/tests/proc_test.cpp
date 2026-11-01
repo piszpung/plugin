@@ -190,6 +190,45 @@ int main (int argc, char** argv)
         check ("transmute works again", proc.transmute() && proc.waitUntilIdle (20000) && proc.getOrbs().size() == 6);
     }
 
+    // reset, hue closeness, export folder
+    {
+        proc.selectOrb (0, false, false);
+        check ("transmute before reset", proc.transmute() && proc.waitUntilIdle (20000));
+        auto first = proc.getOrbs();
+        check ("first-generation colours are varied", [&] { float lo = 1, hi = 0; for (auto& o : first) { lo = std::min (lo, o.hue); hi = std::max (hi, o.hue); } return first.size() >= 6 && hi - lo > 0.15f; }());
+        proc.selectOrb (first[0].id, false, false);
+        check ("transmute from a variation", proc.transmute() && proc.waitUntilIdle (20000));
+        bool close = true, anyChild = false;
+        for (auto& o : proc.getOrbs())
+            if (o.parent == first[0].id) { anyChild = true; if (std::fabs (o.hue - first[0].hue) > 0.081f) close = false; }
+        check ("variations of a variation keep their parent's colour (+-0.08)", anyChild && close);
+
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("polymer_export_test");
+        dir.deleteRecursively();
+        proc.setExportDir (dir);
+        check ("export dir set", proc.getExportDir() == dir);
+        const auto ex = proc.exportSound (first[0].id, "my sample");
+        check ("export goes to the chosen folder", ex.existsAsFile() && ex.getParentDirectory() == dir);
+        juce::MemoryBlock st; proc.getStateInformation (st);
+        proc.setExportDir (juce::File());
+        proc.setStateInformation (st.getData(), (int) st.getSize());
+        check ("export folder restored from project state", proc.getExportDir() == dir);
+        proc.waitUntilIdle (60000);
+
+        const int ver = proc.getSampleVersion();
+        proc.resetCloud();
+        check ("reset removes all variations", proc.getOrbs().empty());
+        check ("reset keeps the sample", proc.hasSource() && proc.getSelected() == 0 && proc.getSampleVersion() == ver);
+        check ("reset: nothing pending", proc.getPending() == 0);
+        check ("reset: peaks of the original still there", ! proc.getPeaks (0).empty());
+        check ("transmute works after reset", proc.transmute() && proc.waitUntilIdle (20000) && proc.getOrbs().size() == 6);
+        proc.resetCloud(); proc.resetCloud();
+        check ("double reset is harmless", proc.getOrbs().empty());
+        juce::MemoryBlock st2; proc.getStateInformation (st2);
+        check ("exported file still exists after reset", ex.existsAsFile());
+        dir.deleteRecursively();
+    }
+
     // MIDI stress: many notes, pitch bend, all-notes-off, no NaN
     {
         bool allFinite = true;

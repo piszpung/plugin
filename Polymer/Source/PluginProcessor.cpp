@@ -115,14 +115,14 @@ void PolymerAudioProcessor::purgeGraveyard (bool all)
     dead.clear();   // freed here, outside the lock and never on the audio thread
 }
 
-std::shared_ptr<poly::Sound> PolymerAudioProcessor::makeSound (int id, int parent, int gen, poly::Dna dna, poly::Audio&& a) const
+std::shared_ptr<poly::Sound> PolymerAudioProcessor::makeSound (int id, int parent, int gen, poly::Dna dna, poly::Audio&& a, float parentHue) const
 {
     auto s = std::make_shared<poly::Sound>();
     s->id = id; s->parent = parent; s->generation = gen; s->dna = dna;
     s->audio = std::move (a);
     s->seconds = (float) (s->audio.size() / s->audio.sr);
     s->peaks = poly::makePeaks (s->audio);
-    s->hue = id > 0 ? poly::hueFromSeed (dna.seed) : poly::hueFromCentroid (poly::analyse (s->audio).centroid);
+    s->hue = id <= 0 ? 0.5f : (parent <= 0 ? poly::hueFromSeed (dna.seed) : poly::childHue (parentHue, dna.seed));
     return s;
 }
 
@@ -284,6 +284,62 @@ float PolymerAudioProcessor::getSourceSeconds() const
     return sounds.empty() ? 0.0f : sounds[0]->seconds;
 }
 
+namespace
+{
+juce::File defaultExportDir() { return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("Polymer exports"); }
+juce::File settingsFile() { return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Polymer").getChildFile ("settings.xml"); }
+juce::String readLastExportDir()
+{
+    if (auto xml = juce::XmlDocument::parse (settingsFile())) return xml->getStringAttribute ("exportDir");
+    return {};
+}
+void writeLastExportDir (const juce::String& path)
+{
+    juce::XmlElement xml ("PolymerSettings");
+    xml.setAttribute ("exportDir", path);
+    const auto f = settingsFile();
+    f.getParentDirectory().createDirectory();
+    xml.writeTo (f);
+}
+} // namespace
+
+juce::File PolymerAudioProcessor::getExportDir() const
+{
+    juce::String p;
+    { const juce::ScopedLock sl (lock); p = exportDirPath; }
+    if (p.isEmpty()) p = readLastExportDir();
+    return p.isNotEmpty() ? juce::File (p) : defaultExportDir();
+}
+
+void PolymerAudioProcessor::setExportDir (const juce::File& d)
+{
+    { const juce::ScopedLock sl (lock); exportDirPath = d.getFullPathName(); }
+    writeLastExportDir (d.getFullPathName());
+    updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
+}
+
+juce::String PolymerAudioProcessor::getExportDirName() const
+{
+    const auto d = getExportDir();
+    return d.getFileName().isNotEmpty() ? d.getFileName() : d.getFullPathName();
+}
+
+void PolymerAudioProcessor::resetCloud()
+{
+    {
+        const juce::ScopedLock sl (lock);
+        if (sounds.empty()) return;
+        ++epoch;                                         // renders still running are discarded
+        for (size_t i = 1; i < sounds.size(); ++i) retireLocked (sounds[i]);
+        sounds.resize (1);
+        selected = 0; wantSelected = -1;                 // nextId keeps counting, so ids are never reused
+        pending.store (0);
+        active.store (sounds[0].get());
+    }
+    const juce::ScopedLock sl (queueLock);
+    jobs.clear();
+}
+
 juce::File PolymerAudioProcessor::exportSound (int id, const juce::String& baseName) const
 {
     std::shared_ptr<poly::Sound> s;
@@ -293,10 +349,13 @@ juce::File PolymerAudioProcessor::exportSound (int id, const juce::String& baseN
     }
     if (s == nullptr || s->audio.size() < 2) return {};
 
-    // Exports live in Documents/Polymer exports and are never deleted or overwritten: a sampler that was given
-    // one of these files refers to it by path, so it has to stay exactly as it was.
-    const auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("Polymer exports");
-    if (! dir.createDirectory().wasOk()) return {};
+    // Exports are never deleted or overwritten: a sampler that was given one of these files refers to it by path.
+    auto dir = getExportDir();
+    if (! dir.createDirectory().wasOk())
+    {
+        dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("Polymer exports");
+        if (! dir.createDirectory().wasOk()) return {};
+    }
 
     juce::String name = juce::File::createLegalFileName (baseName.isNotEmpty() ? baseName : juce::String ("Polymer"));
     name += id == 0 ? juce::String ("_original") : "_poly" + juce::String (id);
@@ -435,7 +494,7 @@ void PolymerAudioProcessor::processJob (const Job& job, juce::Thread& t)
             }
             siblings.push_back (poly::analyse (rendered));
         }
-        auto snd = makeSound (spec.id, spec.parentId, parent->generation + 1, dna, std::move (rendered));
+        auto snd = makeSound (spec.id, spec.parentId, parent->generation + 1, dna, std::move (rendered), parent->hue);
         publish (std::move (snd), job.epoch);
     }
 }
@@ -451,6 +510,7 @@ void PolymerAudioProcessor::getStateInformation (juce::MemoryBlock& dest)
     if (auto params = apvts.copyState().createXml()) root->addChildElement (params.release());
 
     const juce::ScopedLock sl (lock);
+    if (exportDirPath.isNotEmpty()) root->setAttribute ("exportDir", exportDirPath);
     if (! sounds.empty())
     {
         auto* cloud = root->createNewChildElement ("Cloud");
@@ -481,6 +541,8 @@ void PolymerAudioProcessor::setStateInformation (const void* data, int size)
 
     if (auto* params = xml->getChildByName (apvts.state.getType()))
         apvts.replaceState (juce::ValueTree::fromXml (*params));
+
+    { const juce::ScopedLock sl (lock); exportDirPath = xml->getStringAttribute ("exportDir"); }
 
     auto* cloud = xml->getChildByName ("Cloud");
     if (cloud == nullptr) return;

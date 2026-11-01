@@ -58,6 +58,10 @@ public:
     std::vector<OrbView> getOrbs() const;              // all bubbles (without the original)
     std::vector<float> getPeaks (int id) const;        // waveform thumbnail (id 0 = original)
     float getSourceSeconds() const;
+    void resetCloud();                                 // drops all variations, keeps the sample (back to the state before the first Transmute)
+    juce::File getExportDir() const;                   // where "grab sample" writes its .wav files
+    void setExportDir (const juce::File&);             // remembered in the project and as the default for new ones
+    juce::String getExportDirName() const;
     // writes a sound (0 = original) as a 24-bit WAV into a temp folder, for dragging it out of the plug-in; invalid File on failure
     juce::File exportSound (int id, const juce::String& baseName) const;
     int  getSampleVersion() const { return sampleVersion.load(); }
@@ -93,7 +97,7 @@ private:
     int  findPrunableLocked (int protectedParent) const;
     void setSource (poly::Audio&&, bool wasTrimmed, const juce::MemoryBlock* encoded = nullptr);
     void purgeGraveyard (bool all);
-    std::shared_ptr<poly::Sound> makeSound (int id, int parent, int gen, poly::Dna, poly::Audio&&) const;
+    std::shared_ptr<poly::Sound> makeSound (int id, int parent, int gen, poly::Dna, poly::Audio&&, float parentHue = 0.0f) const;
 
     // tree (guarded by `lock`; the audio thread never touches it)
     mutable juce::CriticalSection lock;
@@ -101,6 +105,7 @@ private:
     std::vector<std::pair<std::shared_ptr<poly::Sound>, juce::uint32>> graveyard;
     int selected = 0, nextId = 1, epoch = 0, wantSelected = -1;
     float refRms = 0.0f;
+    juce::String exportDirPath;      // empty = default (Documents/Polymer exports); guarded by lock
     juce::MemoryBlock sourceFlac;   // the source as saved in the project (16-bit FLAC), guarded by lock
 
     juce::CriticalSection queueLock;
