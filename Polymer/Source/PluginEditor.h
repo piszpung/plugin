@@ -66,10 +66,10 @@ private:
     {
         int id = 0, parent = 0, gen = 1;
         float hue = 0.6f, seconds = 1.0f;
-        float x = 288, y = 332, vx = 0, vy = 0;
+        float x = 288, y = 347, vx = 0, vy = 0;
         float born = 0.0f, pulse = 0.0f, alpha = 1.0f, phase = 0.0f;
         bool dying = false;
-        float radius() const { return 10.0f - 1.2f * (float) std::min (gen - 1, 3); }
+        float radius() const { return 7.8f - 0.9f * (float) std::min (gen - 1, 3); }
     };
     struct Fly { float delay, t, dur, size; juce::Point<float> p0, c1, c2, p3; bool landed = false; };
     struct Spark { juce::Point<float> p, v; float life, maxLife, size; juce::Colour c; };

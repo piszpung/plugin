@@ -90,6 +90,30 @@ int main (int argc, char** argv)
     check ("chaos 0 stays close to the original (mean < 0.6)", meanD[0] < 0.6f);
     check ("chaos 1 is far from the original (mean > 1.5x of chaos 0.25)", meanD[6] > 1.5f * meanD[2]);
 
+    // --- effect count / selection statistics ---------------------------------------------------------
+    {
+        bool maxOk = true, oneAtZero = true, fiveSix = false;
+        for (float c : { 0.0f, 0.2f, 0.4f, 0.6f, 0.8f, 1.0f })
+        {
+            int cnt[8] = {}, rev = 0; const int N = 20000;
+            for (int i = 0; i < N; ++i)
+            {
+                Rng rr ((uint32_t) i * 2654435761u + 7u);
+                const auto picks = detail::pickOps (c, rr);
+                maxOk &= (int) picks.size() <= detail::kMaxEffects;
+                ++cnt[std::min<size_t> (7, picks.size())];
+                for (int p : picks) rev += p == detail::kOpReverse;
+                if (c == 0.0f) oneAtZero &= picks.size() == 1;
+                if (c == 1.0f && picks.size() >= 5) fiveSix = true;
+            }
+            std::printf ("chaos %.1f: effects 1:%2d%% 2:%2d%% 3:%2d%% 4:%2d%% 5:%2d%% 6:%2d%%   reverse in %.1f%% of variations\n", c,
+                         cnt[1] * 100 / N, cnt[2] * 100 / N, cnt[3] * 100 / N, cnt[4] * 100 / N, cnt[5] * 100 / N, cnt[6] * 100 / N, rev * 100.0 / N);
+        }
+        check ("never more than 6 effects", maxOk);
+        check ("chaos 0 -> exactly 1 effect", oneAtZero);
+        check ("5 or 6 effects do occur at chaos 100", fiveSix);
+    }
+
     // --- determinism ------------------------------------------------------------------------------
     {
         Audio x = render (src, { 424242u, 0.7f }, ref), y = render (src, { 424242u, 0.7f }, ref);

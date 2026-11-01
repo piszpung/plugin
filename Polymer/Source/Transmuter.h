@@ -723,6 +723,59 @@ inline void finish (Audio& a, float refRms)
     }
 }
 
+// ------------------------------------------------------------------------------------------
+// Effect selection: how many effects a variation gets and which ones. (Indices follow the Op enum in render().)
+// ------------------------------------------------------------------------------------------
+namespace detail
+{
+constexpr int kNumOps = 12;
+constexpr int kMaxEffects = 6;        // most effects chained in one variation
+constexpr int kOpReverse = 4;
+
+inline std::vector<int> pickOps (float c, Rng& rng)
+{
+    struct Info { float weight, minChaos; int stage; };
+    static const Info table[kNumOps] = {
+        { 3.0f, 0.00f, 0 },  // Pitch
+        { 1.5f, 0.10f, 0 },  // Stretch
+        { 1.2f, 0.35f, 0 },  // Smear
+        { 1.2f, 0.25f, 0 },  // Scramble
+        { 0.3f, 0.20f, 0 },  // Reverse (rare)
+        { 1.5f, 0.15f, 1 },  // Warp
+        { 2.5f, 0.00f, 1 },  // Filter
+        { 1.2f, 0.30f, 1 },  // Comb
+        { 1.0f, 0.30f, 2 },  // Crush
+        { 2.0f, 0.00f, 2 },  // Drive
+        { 1.5f, 0.00f, 2 },  // Env
+        { 1.8f, 0.00f, 3 },  // Reverb
+    };
+
+    const float k = 2.6f + 2.8f * c * c;                 // more effects per unit of chaos at the top end, so 5-6 become reachable
+    const float u1 = rng.range (0.6f, 1.0f);             // (explicit order: the compiler must not decide which random number comes first)
+    const float u2 = rng.uni();
+    const int nOps = std::min (kMaxEffects, 1 + (int) (c * k * u1 + u2 * 0.9f));
+
+    std::vector<int> picks;
+    bool used[kNumOps] = {};
+    for (int n = 0; n < nOps; ++n)
+    {
+        float tot = 0.0f;
+        for (int o = 0; o < kNumOps; ++o)
+            if (! used[o] && table[o].minChaos <= c) tot += table[o].weight * (table[o].minChaos > 0.0f ? 0.5f + c : 1.0f);
+        if (tot <= 0.0f) break;
+        float x = rng.uni() * tot;
+        for (int o = 0; o < kNumOps; ++o)
+        {
+            if (used[o] || table[o].minChaos > c) continue;
+            x -= table[o].weight * (table[o].minChaos > 0.0f ? 0.5f + c : 1.0f);
+            if (x <= 0.0f || o == kNumOps - 1) { used[o] = true; picks.push_back (o); break; }
+        }
+    }
+    std::stable_sort (picks.begin(), picks.end(), [&] (int x, int y) { return table[x].stage < table[y].stage; });
+    return picks;
+}
+} // namespace detail
+
 // Returns the variation described by `dna`. `refRms` = activeRms() of the ORIGINAL sound.
 inline Audio render (const Audio& src, const Dna& dna, float refRms)
 {
@@ -733,40 +786,8 @@ inline Audio render (const Audio& src, const Dna& dna, float refRms)
     Rng rng (dna.seed);
 
     enum Op { Pitch, Stretch, Smear, Scramble, Reverse, Warp, Filter, Comb, Crush, Drive, Env, Reverb, NumOps };
-    struct Info { float weight, minChaos; int stage; };
-    static const Info table[NumOps] = {
-        { 3.0f, 0.00f, 0 },  // Pitch
-        { 1.5f, 0.10f, 0 },  // Stretch
-        { 1.2f, 0.35f, 0 },  // Smear
-        { 1.2f, 0.25f, 0 },  // Scramble
-        { 1.0f, 0.20f, 0 },  // Reverse
-        { 1.5f, 0.15f, 1 },  // Warp
-        { 2.5f, 0.00f, 1 },  // Filter
-        { 1.2f, 0.30f, 1 },  // Comb
-        { 1.0f, 0.30f, 2 },  // Crush
-        { 2.0f, 0.00f, 2 },  // Drive
-        { 1.5f, 0.00f, 2 },  // Env
-        { 1.8f, 0.00f, 3 },  // Reverb
-    };
-
-    const int nOps = std::min (4, 1 + (int) (c * 2.6f * rng.range (0.6f, 1.0f) + rng.uni() * 0.9f));
-    std::vector<int> picks;
-    bool used[NumOps] = {};
-    for (int k = 0; k < nOps; ++k)
-    {
-        float tot = 0.0f;
-        for (int o = 0; o < NumOps; ++o)
-            if (! used[o] && table[o].minChaos <= c) tot += table[o].weight * (table[o].minChaos > 0.0f ? 0.5f + c : 1.0f);
-        if (tot <= 0.0f) break;
-        float x = rng.uni() * tot;
-        for (int o = 0; o < NumOps; ++o)
-        {
-            if (used[o] || table[o].minChaos > c) continue;
-            x -= table[o].weight * (table[o].minChaos > 0.0f ? 0.5f + c : 1.0f);
-            if (x <= 0.0f || o == NumOps - 1) { used[o] = true; picks.push_back (o); break; }
-        }
-    }
-    std::stable_sort (picks.begin(), picks.end(), [&] (int x, int y) { return table[x].stage < table[y].stage; });
+    static_assert ((int) NumOps == detail::kNumOps, "keep the effect list in sync with detail::pickOps");
+    const std::vector<int> picks = detail::pickOps (c, rng);
 
     for (int o : picks)
     {

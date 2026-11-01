@@ -69,12 +69,12 @@ Point<float> bezier (Point<float> p0, Point<float> c1, Point<float> c2, Point<fl
     return p0 * (u * u * u) + c1 * (3.0f * u * u * t) + c2 * (3.0f * u * t * t) + p3 * (t * t * t);
 }
 
-const Point<float> kNeck { 288.0f, 332.0f };
-const Point<float> kCloudCentre { 291.0f, 222.0f };
+const Point<float> kNeck { 288.0f, 347.0f };
+const Point<float> kCloudCentre { 291.0f, 218.0f };
 const Rectangle<float> kDropZone { 46.0f, 545.0f, 163.0f, 69.0f };
 const Rectangle<float> kGrab { 46.0f, 440.0f, 163.0f, 48.0f };
 const Rectangle<float> kFrame { 103.0f, 38.0f, 371.0f, 396.0f };
-const juce::AffineTransform kVialMove = juce::AffineTransform::translation (-224.0f, 14.0f);   // the vial is drawn in local coords (centre x 512)
+const juce::AffineTransform kVialMove = juce::AffineTransform::translation (-512.0f, -404.0f).scaled (0.85f).translated (288.0f, 418.0f);   // the vial is drawn in local coords (centre x 512)
 } // namespace
 
 //==============================================================================
@@ -229,7 +229,7 @@ Path Scene::vialPath() const
     return p.createPathWithRoundedCorners (6.0f);
 }
 
-bool Scene::onVial (Point<float> p) const { return Rectangle<float> (224.0f, 322.0f, 128.0f, 106.0f).contains (p); }
+bool Scene::onVial (Point<float> p) const { return Rectangle<float> (232.0f, 338.0f, 112.0f, 90.0f).contains (p); }
 bool Scene::onGrab (Point<float> p) const { return kGrab.contains (p); }
 bool Scene::onDropZone (Point<float> p) const { return kDropZone.contains (p); }
 
@@ -240,7 +240,7 @@ int Scene::orbAt (Point<float> p) const
     {
         if (o.dying || o.born < 0.25f) continue;
         const float d = p.getDistanceFrom ({ o.x, o.y });
-        if (d < o.radius() + 9.0f && d < bestD) { bestD = d; best = o.id; }
+        if (d < o.radius() + 8.0f && d < bestD) { bestD = d; best = o.id; }
     }
     return best;
 }
@@ -327,7 +327,7 @@ void Scene::startDrop()
         f.p0 = { 56.0f + rnd.nextFloat() * 145.0f, 560.0f + rnd.nextFloat() * 40.0f };
         f.c1 = { 215.0f + rnd.nextFloat() * 30.0f, 600.0f - rnd.nextFloat() * 30.0f };
         f.c2 = { 281.0f + rnd.nextFloat() * 14.0f, 270.0f + rnd.nextFloat() * 40.0f };
-        f.p3 = { 285.0f + rnd.nextFloat() * 6.0f, 344.0f };
+        f.p3 = { 285.0f + rnd.nextFloat() * 6.0f, 358.0f };
         flyers.push_back (f);
     }
     liquid = 0.0f;
@@ -423,7 +423,7 @@ void Scene::step (float dt)
             f.landed = true;
             liquidTarget = std::min (0.62f, liquidTarget + 0.62f / 44.0f);
             sloshV += 14.0f * (rnd.nextFloat() - 0.4f);
-            burst ({ f.p3.x, 376.0f }, Colour (150, 255, 180), 2, 40.0f);
+            burst ({ f.p3.x, 383.0f }, Colour (150, 255, 180), 2, 40.0f);
         }
     }
     if (! flyers.empty() && std::all_of (flyers.begin(), flyers.end(), [] (const Fly& f) { return f.landed; }) && liquid > liquidTarget - 0.01f)
@@ -465,8 +465,8 @@ void Scene::step (float dt)
 
     // --- orb physics
     const Point<float> C = kCloudCentre;
-    const float rx = 122.0f, ry = 78.0f;
-    const Point<float> anchor0 { 290.0f, 262.0f };
+    const float rx = 136.0f, ry = 92.0f;
+    const Point<float> anchor0 { 290.0f, 272.0f };
     for (auto& o : orbs)
     {
         o.born = std::min(1.0f, o.born + dt * 1.8f);
@@ -476,7 +476,7 @@ void Scene::step (float dt)
         Point<float> a ((C.x - o.x) * 2.0f, (C.y - o.y) * 2.0f);
         Point<float> pa = anchor0; float L = 0.0f, k = 1.6f;
         if (o.parent > 0)
-            for (const auto& q : orbs) if (q.id == o.parent && ! q.dying) { pa = { q.x, q.y }; L = 62.0f; k = 12.0f; break; }
+            for (const auto& q : orbs) if (q.id == o.parent && ! q.dying) { pa = { q.x, q.y }; L = 46.0f; k = 12.0f; break; }
         {
             Point<float> d (pa.x - o.x, pa.y - o.y);
             const float dist = std::max (0.01f, std::sqrt (d.x * d.x + d.y * d.y));
@@ -488,7 +488,7 @@ void Scene::step (float dt)
             if (&q == &o || q.dying) continue;
             Point<float> d (o.x - q.x, o.y - q.y);
             const float dist = std::max (0.01f, std::sqrt (d.x * d.x + d.y * d.y));
-            const float minD = o.radius() + q.radius() + 18.0f;
+            const float minD = o.radius() + q.radius() + 12.0f;
             if (dist < minD) a += d * (900.0f * (minD - dist) / minD / dist);
         }
         const float qx = (o.x - C.x) / rx, qy = (o.y - C.y) / ry;
@@ -532,7 +532,7 @@ void Scene::updateBlob (float dt)
         for (const auto& o : orbs)
             if (! o.dying && o.born > 0.3f)
                 h = std::max (h, (o.x - blobC.x) * u.x + (o.y - blobC.y) * u.y + o.radius());
-        tgt[i] = h + 26.0f;
+        tgt[i] = h + 20.0f;
     }
     for (int pass = 0; pass < 3; ++pass)
     {
@@ -748,16 +748,36 @@ void Scene::drawCloud (Graphics& g)
 
 void Scene::drawOrbs (Graphics& g)
 {
-    // links to the parent bubble
+    // threads: every bubble hangs on a thread from the bubble it was made from (or from the potion for first generation)
     for (const auto& o : orbs)
     {
-        if (o.parent <= 0 || o.dying) continue;
-        for (const auto& q : orbs)
-            if (q.id == o.parent && ! q.dying)
-            {
-                g.setColour (orbColour (o.hue, 0.20f * std::min (o.alpha, std::min (o.born, 1.0f))));
-                g.drawLine (q.x, q.y, o.x, o.y, 1.0f);
-            }
+        if (o.dying && o.alpha <= 0.0f) continue;
+        Point<float> from = kNeck;
+        float fromAlpha = 0.55f;
+        if (o.parent > 0)
+        {
+            bool found = false;
+            for (const auto& q : orbs)
+                if (q.id == o.parent && ! q.dying) { from = { q.x, q.y }; found = true; break; }
+            if (! found) continue;
+            fromAlpha = 0.7f;
+        }
+        const Point<float> to (o.x, o.y);
+        const Point<float> d = to - from;
+        const float len = std::max (1.0f, std::sqrt (d.x * d.x + d.y * d.y));
+        const Point<float> nrm (-d.y / len, d.x / len);
+        const float sway = std::min (14.0f, 4.0f + len * 0.08f);
+        const float al = std::min (o.alpha, std::min (o.born, 1.0f)) * fromAlpha;
+        for (int k = 0; k < 2; ++k)
+        {
+            const float sg = k == 0 ? 1.0f : -1.0f;
+            const float w1 = std::sin (time * 1.3f + o.phase + (float) k * 2.0f), w2 = std::sin (time * 1.0f + o.phase * 1.7f + (float) k);
+            Path t;
+            t.startNewSubPath (from);
+            t.cubicTo (from + d * 0.33f + nrm * (sway * sg * w1), from + d * 0.68f + nrm * (sway * -sg * w2 * 0.8f), to);
+            const Colour col = o.parent > 0 ? orbColour (o.hue) : kGreen.interpolatedWith (orbColour (o.hue), 0.45f);
+            glowStroke (g, t, col, k == 0 ? 0.9f : 0.6f, al * (k == 0 ? 1.0f : 0.5f));
+        }
     }
     for (const auto& o : orbs)
     {
@@ -779,12 +799,12 @@ void Scene::drawOrbs (Graphics& g)
         if (o.id == selectedId)
         {
             g.setColour (juce::Colours::white.withAlpha (al * (0.72f + 0.2f * std::sin (time * 4.0f))));
-            g.drawEllipse (o.x - r - 6.5f, o.y - r - 6.5f, 2.0f * (r + 6.5f), 2.0f * (r + 6.5f), 1.5f);
+            g.drawEllipse (o.x - r - 5.0f, o.y - r - 5.0f, 2.0f * (r + 5.0f), 2.0f * (r + 5.0f), 1.4f);
         }
         else if (hov)
         {
             g.setColour (juce::Colours::white.withAlpha (al * 0.35f));
-            g.drawEllipse (o.x - r - 5.0f, o.y - r - 5.0f, 2.0f * (r + 5.0f), 2.0f * (r + 5.0f), 1.0f);
+            g.drawEllipse (o.x - r - 4.0f, o.y - r - 4.0f, 2.0f * (r + 4.0f), 2.0f * (r + 4.0f), 1.0f);
         }
     }
 }

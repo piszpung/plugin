@@ -128,6 +128,9 @@ int main (int argc, char** argv)
         std::unique_ptr<juce::AudioFormatReader> r1 (f1.existsAsFile() ? wav.createReaderFor (f1.createInputStream().release(), true) : nullptr);
         check ("export original as wav", r0 != nullptr && r0->numChannels == 2 && r0->bitsPerSample == 24 && r0->lengthInSamples > 1000, f0.getFileName().toStdString());
         check ("export variation as wav (other file)", r1 != nullptr && r1->lengthInSamples > 100 && f1 != f0, f1.getFileName().toStdString());
+        const auto f2 = proc.exportSound (0, "my sample");
+        check ("exporting again never overwrites an earlier export", f2.existsAsFile() && f2 != f0 && f0.existsAsFile());
+        f0.deleteFile(); f1.deleteFile(); f2.deleteFile();
         check ("export unknown id fails cleanly", ! proc.exportSound (99999, "x").existsAsFile());
     }
 

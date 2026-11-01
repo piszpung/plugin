@@ -51,7 +51,7 @@ target_link_libraries(Polymer
 # Optional headless tests (no host needed): cmake -DPOLYMER_BUILD_TESTS=ON ..
 option(POLYMER_BUILD_TESTS "Build processor/editor tests" OFF)
 if(POLYMER_BUILD_TESTS)
-    foreach(t proc_test render_editor junk_test)
+    foreach(t proc_test render_editor junk_test rt_test)
         add_executable(${t} tests/${t}.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp)
         target_compile_definitions(${t} PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_USE_MP3AUDIOFORMAT=1 JUCE_STANDALONE_APPLICATION=1)
         target_link_libraries(${t} PRIVATE juce::juce_audio_processors juce::juce_audio_formats juce::juce_recommended_config_flags)
