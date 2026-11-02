@@ -5,22 +5,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  chronosphere:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Fetch JUCE 8.0.12
-        run: git clone --depth 1 --branch 8.0.12 https://github.com/juce-framework/JUCE.git Stretchy/JUCE
-      - name: Configure
-        run: cmake -S Stretchy -B build -DCMAKE_BUILD_TYPE=Release
-      - name: Build
-        run: cmake --build build --config Release --parallel
-      - name: Upload plugin
-        uses: actions/upload-artifact@v4
-        with:
-          name: Chronosphere-VST3-Windows
-          path: build/Chronosphere_artefacts/Release/VST3/Chronosphere.vst3
-
   polymer:
     runs-on: windows-latest
     steps:
@@ -36,3 +20,19 @@ jobs:
         with:
           name: Polymer-VST3-Windows
           path: build/Polymer_artefacts/Release/VST3/Polymer.vst3
+
+  spore:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch JUCE 8.0.12
+        run: git clone --depth 1 --branch 8.0.12 https://github.com/juce-framework/JUCE.git Spore/JUCE
+      - name: Configure
+        run: cmake -S Spore -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spore-VST3-Windows
+          path: build/Spore_artefacts/Release/VST3/Spore.vst3
