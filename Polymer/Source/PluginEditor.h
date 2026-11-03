@@ -82,6 +82,7 @@ private:
     struct Fly { float delay, t, dur, size; juce::Point<float> p0, c1, c2, p3; bool landed = false; };
     struct Spark { juce::Point<float> p, v; float life, maxLife, size; juce::Colour c; bool smoke = false; };
     struct Bubble { float x, y, vy, r, wob; };
+    struct Ring { float x, y, t; juce::Colour c; };      // expanding wave from a bubble that has just been played
 
     void sync();
     void startDrop();
@@ -104,6 +105,8 @@ private:
     void drawVial (juce::Graphics&);
     void drawFlyers (juce::Graphics&);
     void drawStatus (juce::Graphics&);
+    void drawMotes (juce::Graphics&);
+    void drawRings (juce::Graphics&);
     juce::Path vialPath() const;
     float K() const { return (float) getWidth() / kW; }
 
@@ -114,12 +117,13 @@ private:
     std::vector<Fly> flyers;
     std::vector<Spark> sparks;
     std::vector<Bubble> bubbles;
+    std::vector<Ring> rings;
     std::map<int, std::vector<float>> peakCache;
 
     float time = 0.0f, revealTimer = 0.0f, kickTimer = 0.0f;
     float liquid = 0.0f, liquidTarget = 0.0f, slosh = 0.0f, sloshV = 0.0f, potionRed = 0.0f;
     float brew = 0.0f, cloudAlpha = 0.0f, vialPulse = 0.0f, dropGlow = 0.0f;
-    float errorTimer = 0.0f, noteTimer = 0.0f;
+    float errorTimer = 0.0f, noteTimer = 0.0f, level = 0.0f;
     int lastVersion = -1, selectedId = 0, pending = 0, hoverId = -2;
     uint32_t lastTrigger = 0;
     bool hasSource = false, dragHover = false, firstSync = true, hoverDrop = false, hoverGrab = false, grabArmed = false;

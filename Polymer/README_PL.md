@@ -25,3 +25,8 @@ Folder `Polymer` + plik `.github/workflows/build.yml` w repozytorium, zakładka 
 - **Folder eksportu**: „grab sample” zapisuje .wav do wybranego folderu. Prawy klik na „grab sample” → „Choose export folder…” (np. folder projektu FL Studio). Folder jest zapamiętany w projekcie i jako domyślny dla nowych. Domyślnie: Dokumenty/Polymer exports.
   Uwaga: standard VST3 nie udostępnia wtyczce ścieżki projektu hosta, więc nie da się tego zrobić automatycznie – trzeba wskazać folder raz na projekt.
 - Uwaga: kolory wariacji liczą się inaczej niż wcześniej, więc w starych projektach bąbelki mogą mieć inne kolory (dźwięk ten sam).
+
+## Zmiany (wersja 5)
+- **Wariacje zostają w tonacji sampla.** Usunięte: zmiana wysokości (varispeed) i rozciąganie/ściskanie widma. Resonator (comb) stroi się teraz do wykrytej wysokości sampla (jego oktawy); dźwięki bez wyraźnej wysokości (perkusja, szum) go nie dostają. Rozciąganie czasu działa w trybie WSOLA (ziarna w fazie), więc nie zmienia tonu. Wciąż zmieniają się: barwa, rytm, długość, obwiednia, pogłos, filtr, zniekształcenia, układ fragmentów, tremolo/auto-pan.
+- Test `tests/key_test.cpp`: dla dźwięków tonalnych najsilniejszy prążek wariacji pozostaje wysokością sampla (lub jej oktawą/harmoniczną) w ok. 96% wariacji; stary silnik: ok. 46%.
+- Wygląd: fala rozchodząca się od zagranej bąbelki, ramka „oddycha” z głośnością, lekkie pyłki w tle, połysk na bąbelkach i szkle, po najechaniu na bąbelkę pokazuje jej długość.

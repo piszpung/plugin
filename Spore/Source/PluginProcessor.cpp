@@ -10,13 +10,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout SporeAudioProcessor::createL
     auto text = [] (auto fn) { return [fn] (float v, int) { return juce::String (fn (v)); }; };
     auto unit = juce::NormalisableRange<float> (0.0f, 1.0f, 0.0001f);
 
-    l.add (std::make_unique<P> (ParameterID { "density", 1 }, "Density", unit, 0.5f,
+    l.add (std::make_unique<P> (ParameterID { "density", 1 }, "Density", unit, 0.6f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction (text ([] (float v) { return juce::String (juce::roundToInt (spore::grainCount (v))) + " grains"; }))));
-    l.add (std::make_unique<P> (ParameterID { "size", 1 }, "Size", unit, 0.5f,
+    l.add (std::make_unique<P> (ParameterID { "size", 1 }, "Size", unit, 0.8f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction (text ([] (float v) { return juce::String (juce::roundToInt (spore::grainMs (v))) + " ms"; }))));
-    l.add (std::make_unique<P> (ParameterID { "blur", 1 }, "Blur", unit, 0.35f,
+    l.add (std::make_unique<P> (ParameterID { "blur", 1 }, "Blur", unit, 0.3f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction (text ([] (float v) { return juce::String (juce::CharPointer_UTF8 ("\xC2\xB1")) + juce::String (juce::roundToInt (spore::blurCents (v))) + " ct"; }))));
-    l.add (std::make_unique<P> (ParameterID { "decay", 1 }, "Decay", unit, 0.25f,
+    l.add (std::make_unique<P> (ParameterID { "decay", 1 }, "Decay", unit, 0.2f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction (text ([] (float v) { return juce::String (juce::roundToInt (v * 100.0f)) + " %"; }))));
     l.add (std::make_unique<juce::AudioParameterBool> (ParameterID { "freeze", 1 }, "Germinate (freeze)", false));
     return l;

@@ -80,7 +80,13 @@ void PolymerAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     }
     if (pos < n) sampler.render (L + pos, R + pos, n - pos);
 
-    for (int i = 0; i < n; ++i) { L[i] = poly::softClip (L[i] * 0.8f); R[i] = poly::softClip (R[i] * 0.8f); }
+    float pk = 0.0f;
+    for (int i = 0; i < n; ++i)
+    {
+        L[i] = poly::softClip (L[i] * 0.8f); R[i] = poly::softClip (R[i] * 0.8f);
+        pk = std::max (pk, std::max (std::fabs (L[i]), std::fabs (R[i])));
+    }
+    outPeak.store (std::max (outPeak.load (std::memory_order_relaxed), pk), std::memory_order_relaxed);
     midi.clear();
 }
 

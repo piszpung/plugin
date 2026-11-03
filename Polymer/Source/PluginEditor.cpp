@@ -538,9 +538,11 @@ void Scene::sync()
     {
         lastTrigger = tc;
         const int id = proc.getLastTriggerId();
-        if (id == 0) vialPulse = 1.0f;
-        for (auto& o : orbs) if (o.id == id && ! o.dying) o.pulse = 1.0f;
+        if (id == 0) { vialPulse = 1.0f; rings.push_back ({ kNeck.x, kNeck.y + 22.0f, 0.0f, kLime }); }
+        for (auto& o : orbs)
+            if (o.id == id && ! o.dying) { o.pulse = 1.0f; rings.push_back ({ o.x, o.y, 0.0f, orbColour (o.hue) }); }
     }
+    level = std::max (proc.takeOutputPeak(), level * 0.86f);
 }
 
 //------------------------------------------------------------------------------
@@ -659,6 +661,10 @@ void Scene::step (float dt)
         o.x += o.vx * dt; o.y += o.vy * dt;
     }
     orbs.erase (std::remove_if (orbs.begin(), orbs.end(), [] (const Orb& o) { return o.dying && o.alpha <= 0.0f; }), orbs.end());
+
+    // --- waves
+    for (auto& r : rings) r.t += dt * 0.85f;
+    rings.erase (std::remove_if (rings.begin(), rings.end(), [] (const Ring& r) { return r.t >= 1.0f; }), rings.end());
 
     // --- misc timers
     kickTimer = std::max (0.0f, kickTimer - dt);
@@ -845,6 +851,8 @@ void Scene::drawFrame (Graphics& g)
     fadeLine (g, 150.0f, 410.0f, 400.0f, kCloud, 0.55f);
     fadeLine (g, 170.0f, 390.0f, 400.0f, kCloud, 0.35f);
 
+    drawMotes (g);
+    drawRings (g);
     drawCloud (g);
     drawThreads (g);
     drawOrbs (g);
@@ -869,7 +877,43 @@ void Scene::drawFrame (Graphics& g)
 
     g.setColour (kGreen.withAlpha (0.30f));
     g.strokePath (inset, juce::PathStrokeType (1.0f));
-    glowStroke (g, frame, kGreen, 2.0f, 0.9f + 0.1f * brew * std::sin (time * 6.0f));
+    const float lv = std::clamp (level * 1.6f, 0.0f, 1.0f);       // the frame breathes with the sound
+    glowStroke (g, frame, kGreen, 2.0f, 0.85f + 0.1f * brew * std::sin (time * 6.0f) + 0.3f * lv);
+    if (lv > 0.02f)
+    {
+        g.setColour (kGreen.withAlpha (0.10f * lv));
+        g.strokePath (frame, juce::PathStrokeType (9.0f));
+    }
+}
+
+// a few dust motes drifting up through the frame (very faint, just so the picture is never completely still)
+void Scene::drawMotes (Graphics& g)
+{
+    for (int i = 0; i < 26; ++i)
+    {
+        uint32_t h = (uint32_t) (i + 7) * 2654435761u; h ^= h >> 15; h *= 2246822519u; h ^= h >> 13;
+        const float r1 = (float) (h & 1023u) / 1023.0f, r2 = (float) ((h >> 10) & 1023u) / 1023.0f, r3 = (float) ((h >> 20) & 255u) / 255.0f;
+        const float span = kFrame.getHeight() - 30.0f;
+        const float y = kFrame.getBottom() - 12.0f - std::fmod (r2 * span + time * (3.0f + 5.0f * r3), span);
+        const float x = kFrame.getX() + 30.0f + r1 * (kFrame.getWidth() - 60.0f) + 6.0f * std::sin (time * 0.4f + r2 * 9.0f);
+        const float edge = std::min (1.0f, std::min (y - kFrame.getY(), kFrame.getBottom() - y) / 40.0f);
+        const float tw = 0.5f + 0.5f * std::sin (time * (0.8f + r3) + r1 * 20.0f);
+        g.setColour (kMint.withAlpha (std::max (0.0f, edge) * (0.06f + 0.16f * tw)));
+        const float s = 1.0f + 1.2f * r3;
+        g.fillEllipse (x - s * 0.5f, y - s * 0.5f, s, s);
+    }
+}
+
+// waves that run out from a bubble when it is played
+void Scene::drawRings (Graphics& g)
+{
+    for (const auto& r : rings)
+    {
+        const float e = 1.0f - std::pow (1.0f - r.t, 2.2f);
+        const float rad = 9.0f + 85.0f * e, a = std::pow (1.0f - r.t, 1.6f);
+        g.setColour (r.c.withAlpha (0.55f * a));
+        g.drawEllipse (r.x - rad, r.y - rad, 2.0f * rad, 2.0f * rad, 0.6f + 1.6f * (1.0f - r.t));
+    }
 }
 
 void Scene::drawCloud (Graphics& g)
@@ -972,6 +1016,8 @@ void Scene::drawOrbs (Graphics& g)
         juce::ColourGradient core (col.brighter (0.7f).withAlpha (al), o.x - r * 0.3f, o.y - r * 0.35f, col.darker (0.15f).withAlpha (al), o.x + r * 0.5f, o.y + r * 0.6f, true);
         g.setGradientFill (core);
         g.fillEllipse (o.x - r, o.y - r, 2.0f * r, 2.0f * r);
+        g.setColour (juce::Colours::white.withAlpha (0.5f * al));
+        g.fillEllipse (o.x - r * 0.58f, o.y - r * 0.74f, r * 0.72f, r * 0.38f);      // gloss
 
         if (o.id == selectedId && ! o.dying)
         {
@@ -983,6 +1029,8 @@ void Scene::drawOrbs (Graphics& g)
             g.setColour (juce::Colours::white.withAlpha (al * 0.35f));
             g.drawEllipse (o.x - r - 4.0f, o.y - r - 4.0f, 2.0f * (r + 4.0f), 2.0f * (r + 4.0f), 1.0f);
         }
+        if (hov)
+            text (g, juce::String (o.seconds, 1) + " s", o.x, o.y - r - 13.0f, 10.0f, kMint.withAlpha (0.9f * al), 0.04f);
     }
 }
 
@@ -1041,6 +1089,9 @@ void Scene::drawVial (Graphics& g)
     glowStroke (g, vp, kLime, 1.8f, std::clamp (a, 0.0f, 1.0f));
     g.setColour (kLime.withAlpha (0.55f));
     g.drawLine (499.0f, 320.0f, 525.0f, 320.0f, 1.6f);
+    g.setColour (juce::Colours::white.withAlpha (0.16f));
+    g.drawLine (507.0f, 326.0f, 507.0f, 344.0f, 1.5f);          // glass shine on the neck
+    g.drawLine (474.0f, 388.0f, 495.0f, 363.0f, 1.3f);
     g.restoreState();
 }
 

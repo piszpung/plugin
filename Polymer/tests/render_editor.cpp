@@ -17,10 +17,11 @@ static void run (PolymerEditor& ed, PolymerAudioProcessor& p, float seconds)
 {
     for (float t = 0.0f; t < seconds; t += 1.0f / 30.0f)
     {
+        juce::AudioBuffer<float> blk (2, 512); juce::MidiBuffer mid;      // lets auditions play (-> waves, glow)
+        for (int k = 0; k < 3; ++k) { blk.clear(); p.processBlock (blk, mid); mid.clear(); }
         ed.advanceAnimation (1.0f / 30.0f);
         juce::Thread::sleep (8);
     }
-    (void) p;
 }
 
 int main (int argc, char** argv)
@@ -55,6 +56,9 @@ int main (int argc, char** argv)
     proc.waitUntilIdle (20000);
     run (ed, proc, 4.0f);
     shot (ed, dir.getChildFile ("6_bloom.png"));
+    proc.selectOrb (proc.getOrbs()[0].id, true, false);
+    run (ed, proc, 0.4f);
+    shot (ed, dir.getChildFile ("6b_playing.png"));
     ed.pressReset();
     run (ed, proc, 0.8f);
     shot (ed, dir.getChildFile ("7_dissolving.png"));

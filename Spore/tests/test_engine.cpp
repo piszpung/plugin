@@ -141,12 +141,13 @@ int main()
         char b[96]; std::snprintf (b, sizeof b, "%.1f %% of energy within +-3 %% of 2 kHz", f0 * 100);
         check ("blur 0: pitch unchanged", f0 > 0.9, b);
 
-        eng.reset(); p.blur = 1.0f; p.size = 0.5f;
+        eng.reset(); p.blur = 1.0f; p.size = 0.8f;
         o = run (eng, in, p);
-        const double inRange = bandFraction (o.l, (size_t) (2.5 * SR), 950.0, 4200.0);
-        const double spread = 1.0 - bandFraction (o.l, (size_t) (2.5 * SR), 1900.0, 2100.0);
-        std::snprintf (b, sizeof b, "%.1f %% inside 1-4 kHz (+-1200 ct), %.1f %% away from 2 kHz", inRange * 100, spread * 100);
-        check ("blur 1: pitches spread but stay within +-1200 cents", inRange > 0.93 && spread > 0.7, b);
+        // allowed pitches: root, +-octave, +-fourth, +-fifth (plus a little detune)
+        double inSet = 0, away = 1.0 - bandFraction (o.l, (size_t) (2.5 * SR), 1900.0, 2100.0);
+        for (double ratio : { 0.5, 0.7492, 1.0, 1.3348, 1.4983, 2.0 }) inSet += bandFraction (o.l, (size_t) (2.5 * SR), 2000.0 * ratio * 0.97, 2000.0 * ratio * 1.03);
+        std::snprintf (b, sizeof b, "%.1f %% on root/octave/fourth/fifth lines, %.1f %% away from 2 kHz", inSet * 100, away * 100);
+        check ("blur 1: musical pitch shifts (octaves/fourths/fifths), nothing outside +-1200 cents", inSet > 0.9 && away > 0.4, b);
     }
 
     // 5. pan
@@ -238,6 +239,34 @@ int main()
         bool ok = true; for (float v : ol) ok = ok && std::isfinite (v) && std::fabs (v) <= 1.0001f;
         char b[64]; std::snprintf (b, sizeof b, "%.0f Hz", sr2);
         check ("other sample rates run fine", ok, b);
+    }
+
+    // 11. pad quality: a held chord must stay a clean, steady pad (not a noisy "wind")
+    {
+        std::vector<float> in ((size_t) (10 * SR));
+        const double f[5] = { 110, 164.8, 220, 261.6, 329.6 };
+        for (size_t i = 0; i < in.size(); ++i) { double v = 0; for (double ff : f) for (int h = 1; h <= 6; ++h) v += std::sin (2 * kPi * ff * h * (double) i / SR + ff) / h; in[i] = (float) (v * 0.08); }
+        Sig s; s.l = in; s.r = in;
+        auto conc = [&] (const std::vector<float>& x)      // share of the energy that sits in the strongest 1 % of the spectrum bins
+        {
+            const size_t n = 65536; std::vector<std::complex<double>> a (n);
+            for (size_t i = 0; i < n; ++i) a[i] = (double) x[(size_t) (3 * SR) + i] * (0.5 - 0.5 * std::cos (2 * kPi * (double) i / (double) n));
+            fft (a); std::vector<double> e; double tot = 0;
+            for (size_t k = 1; k < n / 2; ++k) { const double fr = (double) k * SR / (double) n; if (fr < 20 || fr > 10000) continue; e.push_back (std::norm (a[k])); tot += e.back(); }
+            std::sort (e.rbegin(), e.rend()); double top = 0; for (size_t i = 0; i < e.size() / 100; ++i) top += e[i];
+            return top / tot;
+        };
+        const double inRms = rms (s.l, (size_t) (2 * SR), s.l.size());
+        eng.reset(); Params p;                       // the defaults
+        Sig o = run (eng, s, p);
+        double db = 20 * std::log10 (rms (o.l, (size_t) (2 * SR), o.l.size()) / inRms);
+        char b[96]; std::snprintf (b, sizeof b, "tonal concentration %.2f, level %+.1f dB", conc (o.l), db);
+        check ("defaults on a chord: stays tonal and at the input level", conc (o.l) > 0.7 && std::fabs (db) < 2.0, b);
+        eng.reset(); p.blur = 0.0f; p.decay = 0.0f;
+        o = run (eng, s, p);
+        db = 20 * std::log10 (rms (o.l, (size_t) (2 * SR), o.l.size()) / inRms);
+        std::snprintf (b, sizeof b, "tonal concentration %.3f, level %+.1f dB", conc (o.l), db);
+        check ("blur 0 / decay 0 on a chord: practically the same chord", conc (o.l) > 0.97 && std::fabs (db) < 2.0, b);
     }
 
     std::printf ("%s (%d failures)\n", failures ? "SOME TESTS FAILED" : "ALL TESTS PASSED", failures);

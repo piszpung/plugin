@@ -14,7 +14,7 @@ public:
     void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h, float pos, float start, float end, juce::Slider&) override;
 };
 
-// static picture: background, panel, title, captions (buffered, drawn once)
+// static picture: night-forest background, ground, the mushrooms, title (buffered, drawn once)
 class Backdrop : public juce::Component
 {
 public:
@@ -43,7 +43,7 @@ public:
     void advanceAnimation (float seconds);       // also used by the screenshot test
 
 private:
-    class Live;                                   // animated layer: grain display, meters, knob labels
+    class Live;                                   // animated layer: glow of the cap, drifting spores, knob labels
     void timerCallback() override;
 
     SporeAudioProcessor& proc;

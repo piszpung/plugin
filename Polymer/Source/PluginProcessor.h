@@ -67,6 +67,7 @@ public:
     int  getSampleVersion() const { return sampleVersion.load(); }
     bool sourceWasTrimmed() const { return trimmed.load(); }
     uint32_t getTriggerCount() const { return triggerCount.load(); }
+    float takeOutputPeak() { return outPeak.exchange (0.0f); }         // loudest sample since the last call (for the editor's glow)
     int  getLastTriggerId() const { return lastTriggerId.load(); }
 
     juce::AudioProcessorValueTreeState apvts;
@@ -119,6 +120,7 @@ private:
     std::atomic<int> sampleVersion { 0 }, lastTriggerId { 0 };
     std::atomic<uint32_t> triggerCount { 0 };
     std::atomic<bool> trimmed { false };
+    std::atomic<float> outPeak { 0.0f };
     poly::Sampler sampler;
     double hostRate = 44100.0;
     std::atomic<float>* pChaos = nullptr;

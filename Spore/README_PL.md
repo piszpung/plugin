@@ -5,12 +5,14 @@ Wyjście jest w 100% „wet” – miksuj go suwakiem miksu w opakowaniu wtyczki
 
 ## Pokrętła
 - **DENSITY** – ile ziaren gra jednocześnie: 2–64.
-- **SIZE** – długość ziarna: 10–500 ms (obwiednia Hann).
-- **BLUR** – losowy pitch każdego ziarna w zakresie ±1200 centów × BLUR, losowa panorama L/R każdego ziarna oraz szerszy zakres miejsc, z których ziarna czytają bufor.
-- **DECAY** – „życie” ziarna: okno z szybkim atakiem i długim ogonem + filtr każdego ziarna (głównie dolnoprzepustowy, część górnoprzepustowych), którego częstotliwość przesuwa się w trakcie życia ziarna, a rezonans rośnie do połowy życia i znów opada. Wartość 0 = czyste ziarna bez filtra.
-- **GERMINATE** = FREEZE: przestaje zapisywać do bufora i zapętla odczyt ziaren z zamrożonego dźwięku (nieskończona tekstura). Zdjęcie freeze’a wraca do słuchania wejścia.
+- **SIZE** – długość ziarna: 10–500 ms (obwiednia Hann). Dłuższe ziarna = gładszy pad, krótkie = bardziej „ziarnisty” szum.
+- **BLUR** – rozmycie: losowa panorama L/R każdego ziarna, delikatny detune i szerszy zakres miejsc, z których ziarna czytają bufor. Od ok. 20% dochodzą przesunięcia wysokości o oktawę, od ok. 40% o kwartę, od ok. 55% o kwintę (maks. ±1200 centów). Przesunięcia są muzyczne, a nie ciągłe losowe – ciągłe losowanie wysokości zamienia każdy ton w szum („wiatr”).
+- **DECAY** – „życie” ziarna: okno z szybkim atakiem i długim ogonem + łagodny filtr każdego ziarna (głównie dolnoprzepustowy, część górnoprzepustowych), którego częstotliwość przesuwa się w trakcie życia ziarna, a rezonans lekko rośnie w połowie życia. 0 = czyste ziarna bez filtra.
+- **GERMINATE** = FREEZE: przestaje zapisywać do bufora i zapętla odczyt ziaren z zamrożonego dźwięku (nieskończona tekstura).
 
-Po najechaniu na pokrętło etykieta zmienia się na wartość. Dwuklik = wartość domyślna. Wskaźniki IN/OUT pokazują poziom (czerwony znacznik = peak hold). Kropki w okręgu to aktualnie grające ziarna (poziomo – panorama, pionowo – jak daleko wstecz czyta).
+Ziarna są ustawiane w fazie z tym, co już gra (dopasowanie kształtu fali, do 20 ms), dzięki czemu trzymany akord zostaje czystym, stałym padem. Głośność wyjścia jest dopasowana do głośności materiału.
+
+Po najechaniu na pokrętło etykieta zmienia się na wartość. Dwuklik = wartość domyślna. Zarodniki (kropki) pod kapeluszem to aktualnie grające ziarna; kapelusz świeci z głośnością, a przy GERMINATE zarodniki prawie stają.
 
 ## Uwagi
 - Zamrożenie jest zapamiętane w projekcie, ale sam bufor nie – po wczytaniu projektu z włączonym GERMINATE jest cisza, dopóki nie wyłączysz i nie włączysz go ponownie na grającym dźwięku.

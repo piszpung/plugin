@@ -1,9 +1,9 @@
 // Transmuter.h - the "variation engine" of Polymer.
 //
 // A variation is described by a tiny DNA: (seed, chaos). Given the parent sound, the DNA picks a
-// random chain of 1-4 transformations (varispeed pitch, granular stretch, Paulstretch smear,
-// slice scramble, reverse, spectral warp, filter sweep, resonator, bit crush, drive, envelope,
-// reverb) and sets how strong each one is. "Chaos" (0..1) decides how many and how extreme.
+// random chain of transformations (tremolo / auto-pan, granular stretch, Paulstretch smear,
+// slice scramble, reverse, spectral blur, filter sweep, resonator tuned to the sample's own pitch, bit crush, drive,
+// envelope, reverb). Nothing in the chain changes the pitch of the sample: variations stay in its key and sets how strong each one is. "Chaos" (0..1) decides how many and how extreme.
 // The result is always loudness-matched to the original, de-clicked and length-limited.
 //
 // Everything is deterministic (own PRNG), so a variation can be re-created from
@@ -85,15 +85,80 @@ inline float lerp (float a, float b, float t) { return a + (b - a) * t; }
 // Operations. Each takes amt in 0..1 (how strong) and draws its own random parameters.
 // ------------------------------------------------------------------------------------------
 
-// Varispeed pitch (changes length too, like a sampler).
-inline void opPitch (Audio& a, Rng& r, float amt)
+// Tremolo / auto-pan: the level (and the stereo position) is modulated by a slow LFO. Pitch is untouched.
+inline void opTremolo (Audio& a, Rng& r, float amt)
 {
-    const float semis = r.sign() * (0.4f + 0.6f * r.uni()) * std::pow (amt, 1.4f) * 14.0f;
-    const double ratio = std::pow (2.0, semis / 12.0);
-    for (auto& c : a.ch) c = resample (c, ratio);
+    const int n = a.size();
+    if (n < 64) return;
+    const float rate = r.range (1.5f, 4.0f + 9.0f * amt);
+    const float depth = 0.25f + 0.7f * amt;
+    const float pan = r.chance (0.5f) ? r.range (0.4f, 1.0f) : 0.0f;       // 1 = L and R swing against each other
+    const float ph = r.range (0.0f, 6.2832f);
+    for (int c = 0; c < 2; ++c)
+    {
+        const float off = c == 0 ? 0.0f : (float) kPi * pan;
+        auto& chn = a.ch[(size_t) c];
+        for (int i = 0; i < n; ++i)
+        {
+            const float lfo = 0.5f + 0.5f * std::sin (6.2832f * rate * (float) i / (float) a.sr + ph + off);
+            chn[(size_t) i] *= 1.0f - depth * (1.0f - lfo);
+        }
+    }
 }
 
-// Granular time-stretch (pitch preserving, with jittered grains -> texture).
+// Fundamental frequency of the sound (YIN on the loudest parts), 0 if there is no clear pitch (drums, noise).
+inline float detectF0 (const Audio& a)
+{
+    const int n = a.size();
+    const int minLag = std::max (2, (int) (a.sr / 2000.0)), maxLag = std::min ((int) (a.sr / 40.0), n / 3);
+    int W = std::min (4096, n - maxLag - 1);
+    if (W < 512 || maxLag <= minLag + 2) return 0.0f;
+    std::vector<float> x ((size_t) n);
+    for (int i = 0; i < n; ++i) x[(size_t) i] = 0.5f * (a.ch[0][(size_t) i] + a.ch[1][(size_t) i]);
+
+    // the three loudest frames (hop 1024)
+    struct Cand { double e; int s; };
+    std::vector<Cand> cands;
+    for (int s = 0; s + W + maxLag < n; s += 1024)
+    {
+        double e = 0.0; for (int i = 0; i < W; i += 4) e += (double) x[(size_t) (s + i)] * x[(size_t) (s + i)];
+        cands.push_back ({ e, s });
+    }
+    if (cands.empty()) return 0.0f;
+    std::sort (cands.begin(), cands.end(), [] (const Cand& p, const Cand& q) { return p.e > q.e; });
+    if (cands.size() > 3) cands.resize (3);
+
+    float bestF = 0.0f, bestV = 1e9f;
+    std::vector<float> d ((size_t) maxLag + 2), cm ((size_t) maxLag + 2);
+    for (const auto& cd : cands)
+    {
+        if (cd.e < 1e-9) continue;
+        for (int tau = 1; tau <= maxLag; ++tau)
+        {
+            double acc = 0.0;
+            for (int j = 0; j < W; ++j) { const float df = x[(size_t) (cd.s + j)] - x[(size_t) (cd.s + j + tau)]; acc += (double) df * df; }
+            d[(size_t) tau] = (float) acc;
+        }
+        double run = 0.0; cm[0] = 1.0f;
+        for (int tau = 1; tau <= maxLag; ++tau) { run += d[(size_t) tau]; cm[(size_t) tau] = run > 0.0 ? (float) (d[(size_t) tau] * tau / run) : 1.0f; }
+        int pick = -1;
+        for (int tau = minLag; tau < maxLag; ++tau)
+            if (cm[(size_t) tau] < 0.15f) { while (tau + 1 < maxLag && cm[(size_t) tau + 1] < cm[(size_t) tau]) ++tau; pick = tau; break; }
+        if (pick < 0) { float m = 1e9f; for (int tau = minLag; tau < maxLag; ++tau) if (cm[(size_t) tau] < m) { m = cm[(size_t) tau]; pick = tau; } if (m > 0.3f) continue; }
+        float t = (float) pick;
+        if (pick > 1 && pick < maxLag)
+        {
+            const float y0 = cm[(size_t) pick - 1], y1 = cm[(size_t) pick], y2 = cm[(size_t) pick + 1], den = y0 - 2.0f * y1 + y2;
+            if (std::fabs (den) > 1e-9f) t += 0.5f * (y0 - y2) / den;
+        }
+        if (cm[(size_t) pick] < bestV) { bestV = cm[(size_t) pick]; bestF = (float) (a.sr / t); }
+    }
+    return bestV < 0.3f ? bestF : 0.0f;
+}
+
+// Time-stretch with waveform-similarity overlap-add (WSOLA): every grain starts where the signal looks like the natural
+// continuation of the previous one, so the grains add up in phase and the pitch stays exactly where it was.
+// A little jitter of the read position (before the alignment) keeps some life in it.
 inline void opStretch (Audio& a, Rng& r, float amt)
 {
     const int n = a.size();
@@ -106,26 +171,57 @@ inline void opStretch (Audio& a, Rng& r, float amt)
     const auto w = hannWindow (G);
 
     std::vector<float> jit;
-    for (int o = 0; o < outLen; o += Hs) jit.push_back ((r.uni() - 0.5f) * 0.3f * (float) G * amt);
+    for (int o = 0; o < outLen; o += Hs) jit.push_back ((r.uni() - 0.5f) * 0.12f * (float) G * amt);
+
+    std::vector<float> mono ((size_t) n);
+    for (int i = 0; i < n; ++i) mono[(size_t) i] = 0.5f * (a.ch[0][(size_t) i] + a.ch[1][(size_t) i]);
+    const int S = std::max (32, (int) (a.sr * 0.012));          // search range +-12 ms
+    const int Lc = std::min (Hs, 1024), step = 2;
+
+    // grain start positions (the same for both channels)
+    std::vector<int> starts;
+    double inPos = 0.0;
+    int prev = -1;
+    for (int o = 0, gi = 0; o < outLen; o += Hs, ++gi)
+    {
+        int st = std::clamp ((int) (inPos + jit[(size_t) gi]), 0, n - 1);
+        if (prev >= 0 && prev + Hs + Lc < n)
+        {
+            float refE = 1e-9f;
+            for (int i = 0; i < Lc; i += step) refE += mono[(size_t) (prev + Hs + i)] * mono[(size_t) (prev + Hs + i)];
+            float best = -2.0f; int bestSt = st;
+            for (int d = -S; d <= S; d += 2)
+            {
+                const int c0 = st + d;
+                if (c0 < 0 || c0 + Lc >= n) continue;
+                float xy = 0.0f, yy = 1e-9f;
+                for (int i = 0; i < Lc; i += step) { const float y = mono[(size_t) (c0 + i)]; xy += y * mono[(size_t) (prev + Hs + i)]; yy += y * y; }
+                const float sc = xy / std::sqrt (yy * refE);
+                if (sc > best) { best = sc; bestSt = c0; }
+            }
+            st = bestSt;
+        }
+        starts.push_back (st);
+        prev = st;
+        inPos += Hs / f;
+    }
 
     Audio out; out.sr = a.sr; out.resize (outLen);
     for (int c = 0; c < 2; ++c)
     {
-        double inPos = 0.0;
         size_t gi = 0;
         for (int o = 0; o < outLen; o += Hs, ++gi)
         {
-            const int start = std::clamp ((int) (inPos + jit[gi]), 0, n - 1);
+            const int start = starts[gi];
             for (int i = 0; i < G && o + i < outLen; ++i)
             {
                 const int idx = start + i;
                 if (idx >= n) break;
                 out.ch[c][(size_t) (o + i)] += a.ch[c][(size_t) idx] * w[(size_t) i] * 0.5f;
             }
-            inPos += Hs / f;
         }
     }
-    a = std::move (out);
+    a = std::move(out);
 }
 
 // Paulstretch: random-phase spectral stretch -> lush, washed-out version of the sound.
@@ -253,14 +349,14 @@ inline void opReverse (Audio& a, Rng& r, float)
     }
 }
 
-// STFT spectral warp: stretches/squeezes the spectrum, blurs it and (partly) randomises phases.
+// STFT spectral blur: smears the spectrum a little and (partly) randomises phases; the pitch stays where it was.
 inline void opWarp (Audio& a, Rng& r, float amt)
 {
     const int n = a.size();
     if (n < 4096) return;
     const int N = 2048, H = 512;
-    const float w = std::exp (r.sign() * (0.1f + 0.9f * r.uni()) * amt * 0.42f);
-    const int blur = (int) std::round (amt * r.range (2.0f, 10.0f));
+    const float w = 1.0f; (void) r.uni(); (void) r.uni();         // (the old spectral stretch / squeeze moved the pitch)
+    const int blur = (int) std::round (amt * r.range (0.0f, 2.6f));
     const float pr = std::pow (amt, 0.9f) * r.range (0.4f, 1.0f);
 
     FFT fft; fft.init (N);
@@ -349,7 +445,7 @@ inline void opFilter (Audio& a, Rng& r, float amt)
     const int n = a.size();
     if (n < 64) return;
     const int mode = r.below (3);          // 0 LP, 1 HP, 2 BP
-    const float Q = 0.7f + amt * r.range (0.0f, 6.5f);
+    const float Q = 0.7f + amt * r.range (0.0f, 3.3f);
     const float k = 1.0f / Q;
     float f0, f1;
     if (mode == 0)       { f0 = std::exp (lerp (std::log (16000.0f), std::log (r.range (250.0f, 2500.0f)), std::pow (amt, 0.8f))); }
@@ -384,10 +480,17 @@ inline void opFilter (Audio& a, Rng& r, float amt)
     }
 }
 
-// Feedback comb = tuned resonator, adds a ringing pitch.
+// Feedback comb = resonator tuned to the sample's own pitch (or one of its octaves), so it rings in key.
+// Sounds without a clear pitch are left alone.
 inline void opComb (Audio& a, Rng& r, float amt)
 {
-    const float f0 = std::exp (lerp (std::log (90.0f), std::log (1400.0f), r.uni()));
+    const float root = detectF0 (a);
+    if (root <= 0.0f) return;
+    float opts[8]; int no = 0;
+    for (float f = root; f < 1400.0f && no < 8; f *= 2.0f) if (f >= 55.0f) opts[no++] = f;
+    for (float f = root * 0.5f; f >= 55.0f && no < 8; f *= 0.5f) opts[no++] = f;
+    if (no == 0) return;
+    const float f0 = opts[r.below (no)];
     const float fb = 0.55f + 0.39f * amt;
     const float mix = 0.35f + 0.4f * amt;
     const int tail = std::min ((int) (1.2 * a.sr), (int) (a.sr * 0.25 + 6.9 * (a.sr / f0) / -std::log (fb)));
@@ -417,7 +520,7 @@ inline void opComb (Audio& a, Rng& r, float amt)
 inline void opCrush (Audio& a, Rng& r, float amt)
 {
     const int bits = (int) std::round (lerp (14.0f, r.range (3.0f, 6.0f), amt));
-    const int hold = 1 + (int) (amt * r.range (2.0f, 14.0f));
+    const int hold = 1 + (int) (amt * r.range (1.0f, 4.0f));       // (long holds alias into out-of-key tones)
     const float levels = std::pow (2.0f, (float) (bits - 1));
     const float wet = 0.5f + 0.5f * amt;
     for (auto& chn : a.ch)
@@ -724,7 +827,7 @@ inline void finish (Audio& a, float refRms)
     for (auto& chn : a.ch) for (float v : chn) pk = std::max (pk, std::fabs (v));
     if (rms > 1e-9f && refRms > 0.0f && pk > 0.0f)
     {
-        const float g = std::min (std::clamp (refRms / rms, 0.05f, 20.0f), 1.8f / pk);
+        const float g = std::min (std::clamp (refRms / rms, 0.05f, 60.0f), 1.8f / pk);
         for (auto& chn : a.ch) for (auto& v : chn) v = softClip (v * g, 0.8f);
     }
 }
@@ -742,7 +845,7 @@ inline std::vector<int> pickOps (float c, Rng& rng)
 {
     struct Info { float weight, minChaos; int stage; };
     static const Info table[kNumOps] = {
-        { 3.0f, 0.00f, 0 },  // Pitch
+        { 1.4f, 0.00f, 2 },  // Tremolo / auto-pan
         { 1.5f, 0.10f, 0 },  // Stretch
         { 1.2f, 0.35f, 0 },  // Smear
         { 1.2f, 0.25f, 0 },  // Scramble
@@ -785,44 +888,52 @@ inline std::vector<int> pickOps (float c, Rng& rng)
 // Returns the variation described by `dna`. `refRms` = activeRms() of the ORIGINAL sound.
 inline Audio render (const Audio& src, const Dna& dna, float refRms)
 {
-    Audio a = src;
-    if (a.size() < 64 || refRms <= 0.0f) return a;
+    if (src.size() < 64 || refRms <= 0.0f) return src;
 
     const float c = std::clamp (dna.chaos, 0.0f, 1.0f);
-    Rng rng (dna.seed);
-
-    enum Op { Pitch, Stretch, Smear, Scramble, Reverse, Warp, Filter, Comb, Crush, Drive, Env, Reverb, NumOps };
+    enum Op { Tremolo, Stretch, Smear, Scramble, Reverse, Warp, Filter, Comb, Crush, Drive, Env, Reverb, NumOps };
     static_assert ((int) NumOps == detail::kNumOps, "keep the effect list in sync with detail::pickOps");
-    const std::vector<int> picks = detail::pickOps (c, rng);
 
-    for (int o : picks)
+    auto chain = [&] (bool skipFilter)
     {
-        const float amt = std::clamp (0.05f + 0.95f * c * rng.range (0.55f, 1.0f), 0.0f, 1.0f);
-        switch (o)
+        Audio a = src;
+        Rng rng (dna.seed);
+        const std::vector<int> picks = detail::pickOps (c, rng);
+        for (int o : picks)
         {
-            case Pitch:    detail::opPitch (a, rng, amt);    break;
-            case Stretch:  detail::opStretch (a, rng, amt);  break;
-            case Smear:    detail::opSmear (a, rng, amt);    break;
-            case Scramble: detail::opScramble (a, rng, amt); break;
-            case Reverse:  detail::opReverse (a, rng, amt);  break;
-            case Warp:     detail::opWarp (a, rng, amt);     break;
-            case Filter:   detail::opFilter (a, rng, amt);   break;
-            case Comb:     detail::opComb (a, rng, amt);     break;
-            case Crush:    detail::opCrush (a, rng, amt);    break;
-            case Drive:    detail::opDrive (a, rng, amt);    break;
-            case Env:      detail::opEnvelope (a, rng, amt); break;
-            case Reverb:   detail::opReverb (a, rng, amt);   break;
-            default: break;
+            const float amt = std::clamp (0.05f + 0.95f * c * rng.range (0.55f, 1.0f), 0.0f, 1.0f);
+            if (skipFilter && o == Filter) continue;
+            switch (o)
+            {
+                case Tremolo:  detail::opTremolo (a, rng, amt);  break;
+                case Stretch:  detail::opStretch (a, rng, amt);  break;
+                case Smear:    detail::opSmear (a, rng, amt);    break;
+                case Scramble: detail::opScramble (a, rng, amt); break;
+                case Reverse:  detail::opReverse (a, rng, amt);  break;
+                case Warp:     detail::opWarp (a, rng, amt);     break;
+                case Filter:   detail::opFilter (a, rng, amt);   break;
+                case Comb:     detail::opComb (a, rng, amt);     break;
+                case Crush:    detail::opCrush (a, rng, amt);    break;
+                case Drive:    detail::opDrive (a, rng, amt);    break;
+                case Env:      detail::opEnvelope (a, rng, amt); break;
+                case Reverb:   detail::opReverb (a, rng, amt);   break;
+                default: break;
+            }
         }
-    }
-    finish (a, refRms);
+        finish (a, refRms);
+        return a;
+    };
+
+    Audio a = chain (false);
+    // a filter can take everything away from a bass-heavy sound: then the same chain without the filter
+    if (activeRms (a) < refRms * 0.05f) a = chain (true);
 
     // safety net: a variation must never end up silent
     if (activeRms (a) < refRms * 0.01f)
     {
         Audio b = src;
         Rng r2 (dna.seed ^ 0xA5A5A5A5u);
-        detail::opPitch (b, r2, 0.3f + 0.3f * c);
+        detail::opTremolo (b, r2, 0.3f + 0.3f * c);
         finish (b, refRms);
         return b;
     }
