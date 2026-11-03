@@ -36,3 +36,19 @@ jobs:
         with:
           name: Spore-VST3-Windows
           path: build/Spore_artefacts/Release/VST3/Spore.vst3
+
+  poltergeist:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch JUCE 8.0.12
+        run: git clone --depth 1 --branch 8.0.12 https://github.com/juce-framework/JUCE.git Poltergeist/JUCE
+      - name: Configure
+        run: cmake -S Poltergeist -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: Poltergeist-VST3-Windows
+          path: build/Poltergeist_artefacts/Release/VST3/Poltergeist.vst3
