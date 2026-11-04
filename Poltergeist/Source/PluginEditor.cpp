@@ -89,6 +89,13 @@ void LookAndFeel::drawRotarySlider (Graphics& g, int x, int y, int w, int h, flo
 }
 
 //==============================================================================
+Backdrop::Backdrop()
+{
+    setInterceptsMouseClicks (false, false);
+    setBufferedToImage (true);
+    photo = juce::ImageFileFormat::loadFrom (ghostimg::kJpeg, (size_t) ghostimg::kJpegSize);
+}
+
 void Backdrop::paint (Graphics& g)
 {
     const float K = (float) getWidth() / kW;
@@ -96,7 +103,6 @@ void Backdrop::paint (Graphics& g)
     g.fillAll (kBg);
 
     // the photo of the ghost
-    static const juce::Image photo = juce::ImageFileFormat::loadFrom (ghostimg::kJpeg, (size_t) ghostimg::kJpegSize);
     if (photo.isValid())
     {
         g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);

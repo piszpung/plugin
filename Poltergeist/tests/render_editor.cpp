@@ -52,5 +52,22 @@ int main (int argc, char** argv)
     set ("depth", 160.0f); set ("rate", 3.0f);
     run (ed, proc, 6.0f, 0.35f);
     shot (ed, dir.getChildFile ("3_deep.png"));
+    base.reset();
+
+    // lifecycle: what a host does when an effect is added and removed again, many times
+    for (int i = 0; i < 40; ++i)
+    {
+        auto* pr = new PoltergeistAudioProcessor();
+        pr->setPlayConfigDetails (2, 2, 48000.0, 800);
+        pr->prepareToPlay (48000.0, 800);
+        auto* e = pr->createEditor();
+        e->setSize (576, 576);
+        e->createComponentSnapshot (e->getLocalBounds(), true, 1.0f);
+        if (i % 2) { juce::AudioBuffer<float> b (2, 800); juce::MidiBuffer m; b.clear(); pr->processBlock (b, m); }
+        delete e;                 // the host closes the editor first ...
+        pr->releaseResources();
+        delete pr;                // ... then removes the plug-in
+    }
+    std::printf ("lifecycle: 40 create/destroy cycles OK\n");
     return 0;
 }

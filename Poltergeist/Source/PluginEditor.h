@@ -18,8 +18,10 @@ public:
 class Backdrop : public juce::Component
 {
 public:
-    Backdrop() { setInterceptsMouseClicks (false, false); setBufferedToImage (true); }
+    Backdrop();
     void paint (juce::Graphics&) override;
+private:
+    juce::Image photo;      // owned by the component (NOT a static: a static image outlives JUCE when the DLL unloads and crashes the host)
 };
 } // namespace ghostui
 
