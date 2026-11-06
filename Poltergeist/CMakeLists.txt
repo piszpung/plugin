@@ -3,7 +3,18 @@ cmake_minimum_required(VERSION 3.22)
 # static MSVC runtime -> the .vst3 does not need the Visual C++ Redistributable
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+# macOS: universal binary (Apple Silicon + Intel), minimum macOS 10.13
+set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
+set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "")
+
 project(Poltergeist VERSION 1.0.0)
+
+# formats: VST3 everywhere, plus Audio Unit on macOS
+if(APPLE)
+    set(PLUGIN_FORMATS VST3 AU)
+else()
+    set(PLUGIN_FORMATS VST3)
+endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -14,7 +25,7 @@ juce_add_plugin(Poltergeist
     COMPANY_NAME "Poltergeist"
     PLUGIN_MANUFACTURER_CODE Pltg
     PLUGIN_CODE Plgs
-    FORMATS VST3
+    FORMATS ${PLUGIN_FORMATS}
     PRODUCT_NAME "Poltergeist"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE

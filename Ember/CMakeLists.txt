@@ -3,7 +3,18 @@ cmake_minimum_required(VERSION 3.22)
 # static MSVC runtime -> the .vst3 does not need the Visual C++ Redistributable
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+# macOS: universal binary (Apple Silicon + Intel), minimum macOS 10.13
+set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
+set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "")
+
 project(Ember VERSION 1.0.0)
+
+# formats: VST3 everywhere, plus Audio Unit on macOS
+if(APPLE)
+    set(PLUGIN_FORMATS VST3 AU)
+else()
+    set(PLUGIN_FORMATS VST3)
+endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -14,7 +25,7 @@ juce_add_plugin(Ember
     COMPANY_NAME "Ember"
     PLUGIN_MANUFACTURER_CODE Embr
     PLUGIN_CODE Emsa
-    FORMATS VST3
+    FORMATS ${PLUGIN_FORMATS}
     PRODUCT_NAME "Ember"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
@@ -49,7 +60,7 @@ target_link_libraries(Ember
 # Optional headless tests (no host needed): cmake -DEMBER_BUILD_TESTS=ON ..
 option(EMBER_BUILD_TESTS "Build processor/editor tests" OFF)
 if(EMBER_BUILD_TESTS)
-    foreach(t proc_test render_editor)
+    foreach(t proc_test render_editor default_test)
         add_executable(${t} tests/${t}.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp)
         target_compile_definitions(${t} PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1)
         target_link_libraries(${t} PRIVATE juce::juce_audio_processors juce::juce_dsp juce::juce_recommended_config_flags)
