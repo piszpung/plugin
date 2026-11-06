@@ -1,70 +1,44 @@
-name: Build plugins (Windows)
+name: Build plugins (Windows + macOS)
 
 on:
   push:
   workflow_dispatch:
 
 jobs:
-  polymer:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+        plugin: [Polymer, Spore, Poltergeist, Ember, Residue]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Fetch JUCE 8.0.12
-        run: git clone --depth 1 --branch 8.0.12 https://github.com/juce-framework/JUCE.git Polymer/JUCE
+        run: git clone --depth 1 --branch 8.0.12 https://github.com/juce-framework/JUCE.git ${{ matrix.plugin }}/JUCE
       - name: Configure
-        run: cmake -S Polymer -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S ${{ matrix.plugin }} -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build --config Release --parallel
-      - name: Upload plugin
-        uses: actions/upload-artifact@v4
-        with:
-          name: Polymer-VST3-Windows
-          path: build/Polymer_artefacts/Release/VST3/Polymer.vst3
 
-  spore:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Fetch JUCE 8.0.12
-        run: git clone --depth 1 --branch 8.0.12 https://github.com/juce-framework/JUCE.git Spore/JUCE
-      - name: Configure
-        run: cmake -S Spore -B build -DCMAKE_BUILD_TYPE=Release
-      - name: Build
-        run: cmake --build build --config Release --parallel
-      - name: Upload plugin
+      - name: Upload (Windows)
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: Spore-VST3-Windows
-          path: build/Spore_artefacts/Release/VST3/Spore.vst3
+          name: ${{ matrix.plugin }}-VST3-Windows
+          path: build/${{ matrix.plugin }}_artefacts/Release/VST3/${{ matrix.plugin }}.vst3
 
-  poltergeist:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Fetch JUCE 8.0.12
-        run: git clone --depth 1 --branch 8.0.12 https://github.com/juce-framework/JUCE.git Poltergeist/JUCE
-      - name: Configure
-        run: cmake -S Poltergeist -B build -DCMAKE_BUILD_TYPE=Release
-      - name: Build
-        run: cmake --build build --config Release --parallel
-      - name: Upload plugin
+      # macOS: ad-hoc signature (enough to run on your own Mac; for selling you need a Developer ID signature + notarization)
+      - name: Sign ad-hoc (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          codesign --force --deep -s - "build/${{ matrix.plugin }}_artefacts/Release/VST3/${{ matrix.plugin }}.vst3"
+          codesign --force --deep -s - "build/${{ matrix.plugin }}_artefacts/Release/AU/${{ matrix.plugin }}.component"
+      - name: Upload (macOS)
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: Poltergeist-VST3-Windows
-          path: build/Poltergeist_artefacts/Release/VST3/Poltergeist.vst3
-
-  ember:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Fetch JUCE 8.0.12
-        run: git clone --depth 1 --branch 8.0.12 https://github.com/juce-framework/JUCE.git Ember/JUCE
-      - name: Configure
-        run: cmake -S Ember -B build -DCMAKE_BUILD_TYPE=Release
-      - name: Build
-        run: cmake --build build --config Release --parallel
-      - name: Upload plugin
-        uses: actions/upload-artifact@v4
-        with:
-          name: Ember-VST3-Windows
-          path: build/Ember_artefacts/Release/VST3/Ember.vst3
+          name: ${{ matrix.plugin }}-macOS
+          path: |
+            build/${{ matrix.plugin }}_artefacts/Release/VST3/${{ matrix.plugin }}.vst3
+            build/${{ matrix.plugin }}_artefacts/Release/AU/${{ matrix.plugin }}.component
